@@ -350,11 +350,10 @@ def next_bits_ema(msg, window):
     return target_to_bits(new_target)
 
 def next_bits_ema_int_approx(msg, window):      # An integer-math approximation of next_bits_ema() above
-    block_time          = states[-1].timestamp - states[-2].timestamp
-    block_time          = max(IDEAL_BLOCK_TIME // 100, min(100 * IDEAL_BLOCK_TIME, window, block_time))     # Need block_time <= window for the linear approx below to work (approximate the above)
-    old_hashrate_est    = TARGET_1 // bits_to_target(states[-1].bits)
-    new_hashrate_est    = old_hashrate_est * (window + IDEAL_BLOCK_TIME - block_time) // window             # Int-math approx of the above.  Relies on the block_time <= window constraint above
-    new_target          = TARGET_1 // new_hashrate_est
+    block_time = states[-1].timestamp - states[-2].timestamp
+    block_time = max(IDEAL_BLOCK_TIME // 100, min(100 * IDEAL_BLOCK_TIME, window, block_time))         # Need block_time <= window for the linear approx below to work (approximate the above)
+    old_target = bits_to_target(states[-1].bits)
+    new_target = old_target * window // (window + IDEAL_BLOCK_TIME - block_time)                       # Int-math approx of the above.  Relies on the block_time <= window constraint above
     return target_to_bits(new_target)
 
 def block_time(mean_time):
