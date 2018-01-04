@@ -495,9 +495,6 @@ Algos = {
     'emai-1d' : Algo(next_bits_ema_int_approx, {
         'window': 24 * 60 * 60,
     }),
-    'emai-144' : Algo(next_bits_ema_int_approx, {
-        'window': 144 * IDEAL_BLOCK_TIME,
-    }),
     'wtema-72' : Algo(next_bits_wtema, {
         'alpha_recip': 104, # floor(1/(1 - pow(.5, 1.0/72))), # half-life = 72
     })
