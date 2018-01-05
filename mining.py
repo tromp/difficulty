@@ -89,8 +89,6 @@ State = namedtuple('State', 'height wall_time timestamp max_timestamp bits chain
 
 states = []
 
-# This could be prettier if algorithms were classes
-wtema_target = 0
 
 def print_headers():
     print(', '.join(['Height', 'FX', 'Block Time', 'Unix', 'Timestamp',
@@ -282,12 +280,25 @@ def next_bits_wt_compare(msg, block_count):
     return next_bits
 
 def next_bits_wtema(msg, alpha_recip):
-    global wtema_target
+    # This algorithm is weighted-target exponential moving average.
+    # Target is calculated based on inter-block times weighted by a
+    # progressively decreasing factor for past inter-block times,
+    # according to the parameter alpha.  If the single_block_target SBT is
+    # calculated as:
+    #    SBT = prior_target * block_time / ideal_block_time
+    # then:
+    #    next_target = SBT * α + prior_target * (1 - α)
+    # Substituting and factorizing:
+    #    next_target = prior_target * α / ideal_block_time
+    #                  * (block_time + (1 / α - 1) * ideal_block_time)
+    # We use the reciprocal of alpha as an integer to avoid floating
+    # point arithmetic.  Doing so the above formula maintains precision and
+    # avoids overflows wih large targets in regtest
     block_time = states[-1].timestamp - states[-2].timestamp
-    target = bits_to_target(states[-1].bits)
-    weighted_target = target // IDEAL_BLOCK_TIME * block_time
-    wtema_target = weighted_target // alpha_recip + wtema_target // alpha_recip * (alpha_recip - 1)
-    return target_to_bits(wtema_target)
+    prior_target = bits_to_target(states[-1].bits)
+    next_target = prior_target // (IDEAL_BLOCK_TIME * alpha_recip)
+    next_target *= block_time + IDEAL_BLOCK_TIME * (alpha_recip - 1)
+    return target_to_bits(next_target)
 
 def next_bits_dgw3(msg, block_count):
     ''' Dark Gravity Wave v3 from Dash '''
@@ -533,9 +544,7 @@ Scenarios = {
 }
 
 def run_one_simul(algo, scenario, print_it):
-    global wtema_target
     states.clear()
-    wtema_target = bits_to_target(INITIAL_BCC_BITS)
 
     # Initial state is afer 2020 steady prefix blocks
     N = 2020
