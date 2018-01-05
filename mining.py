@@ -84,7 +84,7 @@ GREEDY_WINDOW = 6
 
 IDEAL_BLOCK_TIME = 10 * 60
 
-State = namedtuple('State', 'height wall_time timestamp bits chainwork fx '
+State = namedtuple('State', 'height wall_time timestamp max_timestamp bits chainwork fx '
                    'hashrate rev_ratio greedy_frac msg')
 
 states = []
@@ -237,7 +237,7 @@ def next_bits_sha(msg):
     # block SHAx2 % len(primes), but that data is not available
     # in this simulation
     prime = primes[states[-1].timestamp % len(primes)]
-    
+
     interval_target = compute_cw_target(prime)
     return target_to_bits(interval_target)
 
@@ -340,6 +340,15 @@ def next_bits_m4(msg, window_1, window_2, window_3, window_4):
     return target_to_bits(interval_target >> 2)
 
 def next_bits_ema(msg, window):
+    """This calculates difficulty (1/target) as proportional to the recent hashrate, where "recent hashrate" is estimated by an EMA (exponential moving avg) of recent "hashrate observations", and
+    a "hashrate observation" is inferred from each block time.
+
+    Eg, suppose our hashrate estimate before the last block B was H, and thus our difficulty D was proportional to H, intended to yield (on average) a 10-minute block.  But suppose in fact
+    block B was mined after only 2 minutes.  Then we infer that during those 2 minutes, hashrate was ~5H, and update our next block's hashrate estimate (and thus difficulty) upwards accordingly.
+
+    In particular, blocks twice as long get twice the weight: a 1-second block tells us hashrate was (probably) high for only 1 second, but a 24-hour block tells us hashrate was (probably) low
+    for a full day - the latter *should* get much more weight in our "recent hashrate" estimate."""
+
     block_time          = states[-1].timestamp - states[-2].timestamp
     block_time          = max(IDEAL_BLOCK_TIME / 100, min(100 * IDEAL_BLOCK_TIME, block_time))          # Crudely dodge problems from ~0/negative/huge block times
     old_hashrate_est    = TARGET_1 / bits_to_target(states[-1].bits)                                    # "Hashrate estimate" - aka difficulty!
@@ -349,11 +358,18 @@ def next_bits_ema(msg, window):
     new_target          = round(TARGET_1 / new_hashrate_est)
     return target_to_bits(new_target)
 
-def next_bits_ema_int_approx(msg, window):      # An integer-math approximation of next_bits_ema() above
-    block_time = states[-1].timestamp - states[-2].timestamp
-    block_time = max(IDEAL_BLOCK_TIME // 100, min(100 * IDEAL_BLOCK_TIME, window, block_time))         # Need block_time <= window for the linear approx below to work (approximate the above)
+def next_bits_ema2(msg, window):
+    # A minor reworking of next_bits_ema() above, meant to produce almost exactly the same numbers in typical cases, but be more resilient to huge/0/negative block times.
+    block_time = max(0, states[-1].timestamp - states[-2].max_timestamp)
     old_target = bits_to_target(states[-1].bits)
-    new_target = old_target * window // (window + IDEAL_BLOCK_TIME - block_time)                       # Int-math approx of the above.  Relies on the block_time <= window constraint above
+    new_target = old_target if block_time == 0 else round(old_target / (1 - math.expm1(-block_time / window) * (IDEAL_BLOCK_TIME / block_time - 1)))
+    return target_to_bits(new_target)
+
+def next_bits_ema_int_approx(msg, window):
+    # An integer-math simplified approximation of next_bits_ema2() above.
+    block_time = max(0, min(window, states[-1].timestamp - states[-2].max_timestamp))                   # Need block_time <= window for the linear approx below to work (approximate the above)
+    old_target = bits_to_target(states[-1].bits)
+    new_target = old_target * window // (window + IDEAL_BLOCK_TIME - block_time)                        # Simplifies the corresponding line above using this approx: for 0 <= x << 1, 1-e^(-x) =~ x
     return target_to_bits(new_target)
 
 def block_time(mean_time):
@@ -411,6 +427,7 @@ def next_step(algo, scenario, fx_jump_factor):
             timestamp = wall_time + 2 * 60 * 60
     else:
         timestamp = wall_time
+    max_timestamp = max(timestamp, states[-1].max_timestamp)
     # Get a new FX rate
     rand = random.random()
     fx = scenario.next_fx(rand, **scenario.params)
@@ -422,7 +439,7 @@ def next_step(algo, scenario, fx_jump_factor):
     chainwork = states[-1].chainwork + bits_to_work(bits)
 
     # add a state
-    states.append(State(states[-1].height + 1, wall_time, timestamp,
+    states.append(State(states[-1].height + 1, wall_time, timestamp, max_timestamp,
                         bits, chainwork, fx, hashrate, rev_ratio,
                         greedy_frac, ' / '.join(msg)))
 
@@ -491,6 +508,9 @@ Algos = {
     'ema-1d' : Algo(next_bits_ema, {
         'window': 24 * 60 * 60,
     }),
+    'ema2-1d' : Algo(next_bits_ema2, {
+        'window': 24 * 60 * 60,
+    }),
     'emai-1d' : Algo(next_bits_ema_int_approx, {
         'window': 24 * 60 * 60,
     }),
@@ -521,7 +541,7 @@ def run_one_simul(algo, scenario, print_it):
     N = 2020
     for n in range(-N, 0):
         state = State(INITIAL_HEIGHT + n, INITIAL_TIMESTAMP + n * IDEAL_BLOCK_TIME,
-                      INITIAL_TIMESTAMP + n * IDEAL_BLOCK_TIME,
+                      INITIAL_TIMESTAMP + n * IDEAL_BLOCK_TIME, INITIAL_TIMESTAMP + n * IDEAL_BLOCK_TIME,
                       INITIAL_BCC_BITS, INITIAL_SINGLE_WORK * (n + N + 1),
                       INITIAL_FX, INITIAL_HASHRATE, 1.0, False, '')
         states.append(state)
