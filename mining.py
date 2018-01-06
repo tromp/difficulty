@@ -238,6 +238,82 @@ def next_bits_sha(msg):
     interval_target = compute_cw_target(prime)
     return target_to_bits(interval_target)
 
+def next_bits_wave(msg, avgcount):
+    primes = [ # 73,  79,  83,  89,  97, 101,
+              103, 107, 109, 113, 127, 131, 137, 139,
+              149, 151, 157, 163, 167, 173, 179, 181,
+              191, 193, 197, 199, 211, 223, 227, 229 ]
+    assert avgcount <= len(primes) and avgcount >= 0, "invalid samplesize"
+
+    seed = states[-1].timestamp % (len(primes) // avgcount) + 1
+    total_work = 0
+    total_timespan = 0
+    random.seed(states[-1].timestamp)
+
+    for i in range(1, avgcount):
+        prime = random.randrange( 0, len(primes))
+        #prime = random.randrange( (len(primes) // avgcount) * i, (len(primes) // avgcount) * (i+1))
+        work, timespan = wave_data(i, primes[prime])
+        interval_target = (1 << 256) // (work * 600 // timespan) - 1
+        total_work += work
+        total_timespan += timespan
+
+    normalized_work = (total_work * 600) // total_timespan
+    target = (1 << 256) // normalized_work - 1
+    #last_target = bits_to_target(states[-1].bits)
+    #if target > (last_target << 1):
+    #    target = last_target << 1
+    #elif target < (last_target >> 1):
+    #    target = last_target >> 1
+
+    return target_to_bits(target)
+
+def next_bits_wave_random(msg, avgcount):
+    import random
+
+    random.seed(states[-1].timestamp)
+    total_work = 0
+    total_timespan = 0
+    element = 1
+    for i in range(1, avgcount):
+        element = random.randrange(73, 201)
+        work, timespan = wave_data(i, element)
+        total_work += work
+        total_timespan += timespan
+
+    normalized_work = (total_work * 600) // total_timespan
+    target = (1 << 256) // normalized_work - 1
+
+    return target_to_bits(target)
+
+
+def wave_data(start, block_count):
+    start = len(states) - 1
+    first, last  = suitable_block_index(start - block_count), suitable_block_index(start)
+    timespan = states[last].timestamp - states[first].timestamp
+    # Cap limit if something weird happens for 3 blocks in a row
+    timespan = max(block_count * IDEAL_BLOCK_TIME // 2, min(block_count * 2 * IDEAL_BLOCK_TIME, timespan))
+    work = (states[last].chainwork - states[first].chainwork)
+    return work, timespan
+
+
+def next_bits_avg(msg, algo, avgcount):
+    primes = [ 13,  17,  19,  23,  29,  31,  37,  41,
+               43,  47,  73,  79,  83,  89,  97, 101,
+              103, 107, 109, 113, 127, 131, 137, 139,
+              149, 151, 157, 163, 167, 173, 179, 181,
+              191, 193, 197, 199, 211, 223, 227, 229,
+              233, 239, 241, 251, 257, 263, 269, 271 ]
+    assert avgcount <= len(primes) and avgcount >= 0, "invalid samplesize"
+
+    interval_target = 0
+    for i in range(0, avgcount):
+        interval_target += algo(primes[i]) // avgcount
+
+    return target_to_bits(interval_target)
+
+
+
 def next_bits_cw(msg, block_count):
     interval_target = compute_cw_target(block_count)
     return target_to_bits(interval_target)
@@ -439,8 +515,21 @@ Algos = {
         'block_count': 144,
     }),
     'cw-sha-16' : Algo(next_bits_sha, {}),
+    'cw-avg-16' : Algo(next_bits_avg, {
+        'avgcount': 16,
+        'algo': compute_cw_target
+    }),
     'cw-180' : Algo(next_bits_cw, {
         'block_count': 180,
+    }),
+    'ksch-5' : Algo(next_bits_wave, {
+        'avgcount': 5,
+    }),
+    'ksch-7' : Algo(next_bits_wave, {
+        'avgcount': 7,
+    }),
+    'r-ksch-5' : Algo(next_bits_wave_random, {
+        'avgcount': 5,
     }),
     'wt-144' : Algo(next_bits_wt, {
         'block_count': 144
