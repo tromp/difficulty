@@ -371,9 +371,9 @@ def next_bits_ema(msg, window):
 
 def next_bits_ema2(msg, window):
     # A minor reworking of next_bits_ema() above, meant to produce almost exactly the same numbers in typical cases, but be more resilient to huge/0/negative block times.
-    block_time = max(0, states[-1].timestamp - states[-2].max_timestamp)
+    block_time = max(min(IDEAL_BLOCK_TIME, window) / 100, states[-1].timestamp - states[-2].max_timestamp)  # Luckily our target formula is ~flat near 0, so can floor block_time at some small val
     old_target = bits_to_target(states[-1].bits)
-    new_target = old_target if block_time == 0 else round(old_target / (1 - math.expm1(-block_time / window) * (IDEAL_BLOCK_TIME / block_time - 1)))
+    new_target = round(old_target / (1 - math.expm1(-block_time / window) * (IDEAL_BLOCK_TIME / block_time - 1)))
     return target_to_bits(new_target)
 
 def next_bits_ema_int_approx(msg, window):
