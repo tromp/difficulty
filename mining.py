@@ -384,20 +384,21 @@ def next_bits_ema_int_approx(msg, window):
     return target_to_bits(new_target)
 
 def exp_int_approx(x, decimals=9):
-    """Approximates e**(x/10**decimals) using integer math, returning the answer scaled by the same number of dec places as the input.  Eg:
+    """Approximates e**(x / 10**decimals) using integer math, returning the answer scaled by the same number of dec places as the input.  Eg:
     exp_int_approx(1000000, 6) ->  2718281 (e**1 = 2.718281)
     exp_int_approx(3000, 3)    -> 20085    (e**3 = 20.085)
     exp_int_approx(500, 3)     ->  1648    (e**0.5 = 1.648)"""
     assert type(x) is int, str(type(x))                                             # If we pass in a non-int, something has gone wrong
+
     scaling, scaling_2 = 10**decimals, 10**(2*decimals)
     h = max(0, int.bit_length(x) - int.bit_length(scaling) + 4)                     # h = the number of times we halve x before using our fancy approximation
     term1, term2 = 3 * scaling << h, 3 * scaling_2 << (2*h)                         # Terms from the hairy but accurate approximation we're using - see https://math.stackexchange.com/a/56064
-    e_x_halved_h_times = scaling_2 * ((x + term1)**2 + term2) // ((x - term1)**2 + term2)
-    e_x = e_x_halved_h_times
+    hth_square_root_of_e_x = scaling_2 * ((x + term1)**2 + term2) // ((x - term1)**2 + term2)
+
+    e_x = hth_square_root_of_e_x                                                    # Now just need to square hth_square_root_of_e_x h times, while repeatedly dividing out our scaling factor
     for i in range(h):
-        e_x **= 2
-        e_x //= scaling_2
-    return e_x // scaling
+        e_x = e^x**2 // scaling_2
+    return e_x // scaling                                                           # And finally, we still have one extra scaling factor to divide out.
 
 def next_bits_ema_int_approx2(msg, window):
     # An integer-math version of next_bits_ema2() above, trying to retain the correct exponential behavior for very long block times.
