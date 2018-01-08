@@ -380,7 +380,32 @@ def next_bits_ema_int_approx(msg, window):
     # An integer-math simplified approximation of next_bits_ema2() above.
     block_time = max(0, min(window, states[-1].timestamp - states[-2].max_timestamp))                   # Need block_time <= window for the linear approx below to work (approximate the above)
     old_target = bits_to_target(states[-1].bits)
-    new_target = old_target * window // (window + IDEAL_BLOCK_TIME - block_time)                        # Simplifies the corresponding line above using this approx: for 0 <= x << 1, 1-e^(-x) =~ x
+    new_target = old_target * window // (window + IDEAL_BLOCK_TIME - block_time)                        # Simplifies the corresponding line above via this approx: for 0 <= x << 1, 1-e**(-x) =~ x
+    return target_to_bits(new_target)
+
+def exp_int_approx(x, decimals=9):
+    """Approximates e**(x/10**decimals) using integer math, returning the answer scaled by the same number of dec places as the input.  Eg:
+    exp_int_approx(1000000, 6) ->  2718281 (e**1 = 2.718281)
+    exp_int_approx(3000, 3)    -> 20085    (e**3 = 20.085)
+    exp_int_approx(500, 3)     ->  1648    (e**0.5 = 1.648)"""
+    assert type(x) is int, str(type(x))                                             # If we pass in a non-int, something has gone wrong
+    scaling, scaling_2 = 10**decimals, 10**(2*decimals)
+    h = max(0, int.bit_length(x) - int.bit_length(scaling) + 4)                     # h = the number of times we halve x before using our fancy approximation
+    term1, term2 = 3 * scaling << h, 3 * scaling_2 << (2*h)                         # Terms from the hairy but accurate approximation we're using - see https://math.stackexchange.com/a/56064
+    e_x_halved_h_times = scaling_2 * ((x + term1)**2 + term2) // ((x - term1)**2 + term2)
+    e_x = e_x_halved_h_times
+    for i in range(h):
+        e_x **= 2
+        e_x //= scaling_2
+    return e_x // scaling
+
+def next_bits_ema_int_approx2(msg, window):
+    # An integer-math version of next_bits_ema2() above, trying to retain the correct exponential behavior for very long block times.
+    block_time = max(min(IDEAL_BLOCK_TIME, window) // 100, states[-1].timestamp - states[-2].max_timestamp)
+    old_target = bits_to_target(states[-1].bits)
+    decimals = 9
+    scaling = 10**decimals
+    new_target = scaling**2 * old_target // (scaling**2 - (exp_int_approx(scaling * -block_time // window, decimals) - scaling) * (scaling * IDEAL_BLOCK_TIME // block_time - scaling))
     return target_to_bits(new_target)
 
 def block_time(mean_time):
@@ -523,6 +548,9 @@ Algos = {
         'window': 24 * 60 * 60,
     }),
     'emai-1d' : Algo(next_bits_ema_int_approx, {
+        'window': 24 * 60 * 60,
+    }),
+    'emai2-1d' : Algo(next_bits_ema_int_approx2, {
         'window': 24 * 60 * 60,
     }),
     'wtema-72' : Algo(next_bits_wtema, {
