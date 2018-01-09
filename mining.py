@@ -84,7 +84,7 @@ GREEDY_WINDOW = 6
 
 IDEAL_BLOCK_TIME = 10 * 60
 
-State = namedtuple('State', 'height wall_time timestamp max_timestamp bits chainwork fx '
+State = namedtuple('State', 'height wall_time timestamp bits chainwork fx '
                    'hashrate rev_ratio greedy_frac msg')
 
 states = []
@@ -371,14 +371,16 @@ def next_bits_ema(msg, window):
 
 def next_bits_ema2(msg, window):
     # A minor reworking of next_bits_ema() above, meant to produce almost exactly the same numbers in typical cases, but be more resilient to huge/0/negative block times.
-    block_time = max(min(IDEAL_BLOCK_TIME, window) / 100, states[-1].timestamp - states[-2].max_timestamp)  # Luckily our target formula is ~flat near 0, so can floor block_time at some small val
+    max_prev_timestamp = max(state.timestamp for state in states[-100:-1])
+    block_time = max(min(IDEAL_BLOCK_TIME, window) / 100, states[-1].timestamp - max_prev_timestamp)    # Luckily our target formula is ~flat near 0, so can floor block_time at some small val
     old_target = bits_to_target(states[-1].bits)
     new_target = round(old_target / (1 - math.expm1(-block_time / window) * (IDEAL_BLOCK_TIME / block_time - 1)))
     return target_to_bits(new_target)
 
 def next_bits_ema_int_approx(msg, window):
     # An integer-math simplified approximation of next_bits_ema2() above.
-    block_time = max(0, min(window, states[-1].timestamp - states[-2].max_timestamp))                   # Need block_time <= window for the linear approx below to work (approximate the above)
+    max_prev_timestamp = max(state.timestamp for state in states[-100:-1])
+    block_time = max(0, min(window, states[-1].timestamp - max_prev_timestamp))                         # Need block_time <= window for the linear approx below to work (approximate the above)
     old_target = bits_to_target(states[-1].bits)
     new_target = old_target * window // (window + IDEAL_BLOCK_TIME - block_time)                        # Simplifies the corresponding line above via this approx: for 0 <= x << 1, 1-e**(-x) =~ x
     return target_to_bits(new_target)
@@ -402,7 +404,8 @@ def exp_int_approx(x, decimals=9):
 
 def next_bits_ema_int_approx2(msg, window):
     # An integer-math version of next_bits_ema2() above, trying to retain the correct exponential behavior for very long block times.
-    block_time = max(min(IDEAL_BLOCK_TIME, window) // 100, states[-1].timestamp - states[-2].max_timestamp)
+    max_prev_timestamp = max(state.timestamp for state in states[-100:-1])
+    block_time = max(min(IDEAL_BLOCK_TIME, window) // 100, states[-1].timestamp - max_prev_timestamp)
     old_target = bits_to_target(states[-1].bits)
     decimals = 9
     scaling = 10**decimals
@@ -413,14 +416,14 @@ def next_bits_simple_exponential(msg, window):
     # Dead simple: if the block time is IDEAL_BLOCK_TIME, target is unchanged; if it's more (or less) by n (-n) minutes, scale target by e**(n/window).
     # One nice thing about this is it avoids any need for special handling of huge/0/negative block times.  Eg, successive block times of (-1000000, 1000020) (or vice versa) result in
     # *exactly* the same target as (10, 10).  (This is in fact the only algo with this property!)
-    block_time = states[-1].timestamp - states[-2].max_timestamp
+    block_time = states[-1].timestamp - states[-2].timestamp
     old_target = bits_to_target(states[-1].bits)
     new_target = round(math.exp((block_time - IDEAL_BLOCK_TIME) / window) * old_target)
     return target_to_bits(new_target)
 
 def next_bits_simple_exponential_int_approx(msg, window):
     # An integer-math version of next_bits_simple_exponential() above.
-    block_time = states[-1].timestamp - states[-2].max_timestamp
+    block_time = states[-1].timestamp - states[-2].timestamp
     old_target = bits_to_target(states[-1].bits)
     decimals = 9
     scaling = 10**decimals
@@ -482,7 +485,6 @@ def next_step(algo, scenario, fx_jump_factor):
             timestamp = wall_time + 2 * 60 * 60
     else:
         timestamp = wall_time
-    max_timestamp = max(timestamp, states[-1].max_timestamp)
     # Get a new FX rate
     rand = random.random()
     fx = scenario.next_fx(rand, **scenario.params)
@@ -494,7 +496,7 @@ def next_step(algo, scenario, fx_jump_factor):
     chainwork = states[-1].chainwork + bits_to_work(bits)
 
     # add a state
-    states.append(State(states[-1].height + 1, wall_time, timestamp, max_timestamp,
+    states.append(State(states[-1].height + 1, wall_time, timestamp,
                         bits, chainwork, fx, hashrate, rev_ratio,
                         greedy_frac, ' / '.join(msg)))
 
@@ -603,7 +605,7 @@ def run_one_simul(algo, scenario, print_it):
     N = 2020
     for n in range(-N, 0):
         state = State(INITIAL_HEIGHT + n, INITIAL_TIMESTAMP + n * IDEAL_BLOCK_TIME,
-                      INITIAL_TIMESTAMP + n * IDEAL_BLOCK_TIME, INITIAL_TIMESTAMP + n * IDEAL_BLOCK_TIME,
+                      INITIAL_TIMESTAMP + n * IDEAL_BLOCK_TIME,
                       INITIAL_BCC_BITS, INITIAL_SINGLE_WORK * (n + N + 1),
                       INITIAL_FX, INITIAL_HASHRATE, 1.0, False, '')
         states.append(state)
