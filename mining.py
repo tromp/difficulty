@@ -409,6 +409,24 @@ def next_bits_ema_int_approx2(msg, window):
     new_target = scaling**2 * old_target // (scaling**2 - (exp_int_approx(scaling * -block_time // window, decimals) - scaling) * (scaling * IDEAL_BLOCK_TIME // block_time - scaling))
     return target_to_bits(new_target)
 
+def next_bits_simple_exponential(msg, window):
+    # Dead simple: if the block time is IDEAL_BLOCK_TIME, target is unchanged; if it's more (or less) by n (-n) minutes, scale target by e**(n/window).
+    # One nice thing about this is it avoids any need for special handling of huge/0/negative block times.  Eg, successive block times of (-1000000, 1000020) (or vice versa) result in
+    # *exactly* the same target as (10, 10).  (This is in fact the only algo with this property!)
+    block_time = states[-1].timestamp - states[-2].max_timestamp
+    old_target = bits_to_target(states[-1].bits)
+    new_target = round(math.exp((block_time - IDEAL_BLOCK_TIME) / window) * old_target)
+    return target_to_bits(new_target)
+
+def next_bits_simple_exponential_int_approx(msg, window):
+    # An integer-math version of next_bits_simple_exponential() above.
+    block_time = states[-1].timestamp - states[-2].max_timestamp
+    old_target = bits_to_target(states[-1].bits)
+    decimals = 9
+    scaling = 10**decimals
+    new_target = exp_int_approx(scaling * (block_time - IDEAL_BLOCK_TIME) // window, decimals) * old_target // scaling
+    return target_to_bits(new_target)
+
 def block_time(mean_time):
     # Sample the exponential distn
     sample = random.random()
@@ -556,7 +574,13 @@ Algos = {
     }),
     'wtema-72' : Algo(next_bits_wtema, {
         'alpha_recip': 104, # floor(1/(1 - pow(.5, 1.0/72))), # half-life = 72
-    })
+    }),
+    'simpexp-1d' : Algo(next_bits_simple_exponential, {
+        'window': 24 * 60 * 60,
+    }),
+    'simpexpi-1d' : Algo(next_bits_simple_exponential_int_approx, {
+        'window': 24 * 60 * 60,
+    }),
 }
 
 Scenario = namedtuple('Scenario', 'next_fx params, dr_hashrate, pump_144_threshold')
