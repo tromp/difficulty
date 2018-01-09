@@ -397,7 +397,7 @@ def exp_int_approx(x, decimals=9):
 
     e_x = hth_square_root_of_e_x                                                    # Now just need to square hth_square_root_of_e_x h times, while repeatedly dividing out our scaling factor
     for i in range(h):
-        e_x = e^x**2 // scaling_2
+        e_x = e_x**2 // scaling_2
     return e_x // scaling                                                           # And finally, we still have one extra scaling factor to divide out.
 
 def next_bits_ema_int_approx2(msg, window):
