@@ -56,36 +56,38 @@ def target_to_hex(target):
 
 TARGET_1 = bits_to_target(486604799)
 
-INITIAL_BCC_BITS = 403458999
-INITIAL_SWC_BITS = 402734313
-INITIAL_FX = 0.18
-INITIAL_TIMESTAMP = 1503430225
-INITIAL_HASHRATE = 500    # In PH/s.
-INITIAL_HEIGHT = 481824
-INITIAL_SINGLE_WORK = bits_to_work(INITIAL_BCC_BITS)
+default_params = {
+    'INITIAL_BCC_BITS':0x18084bb7,
+    'INITIAL_SWC_BITS':0x18013ce9,
+    'INITIAL_FX':0.19,
+    'INITIAL_TIMESTAMP':1503430225,
+    'INITIAL_HASHRATE':1000,    # In PH/s.
+    'INITIAL_HEIGHT':481824,
+    'num_blocks':10000,
 
-# Steady hashrate mines the BCC chain all the time.  In PH/s.
-STEADY_HASHRATE = 300
+    # Steady hashrate mines the BCC chain all the time.  In PH/s.
+    'STEADY_HASHRATE':300,
 
-# Variable hash is split across both chains according to relative
-# revenue.  If the revenue ratio for either chain is at least 15%
-# higher, everything switches.  Otherwise the proportion mining the
-# chain is linear between +- 15%.
-VARIABLE_HASHRATE = 2000   # In PH/s.
-VARIABLE_PCT = 15   # 85% to 115%
-VARIABLE_WINDOW = 6  # No of blocks averaged to determine revenue ratio
+    # Variable hash is split across both chains according to relative
+    # revenue.  If the revenue ratio for either chain is at least 15%
+    # higher, everything switches.  Otherwise the proportion mining the
+    # chain is linear between +- 15%.
+    'VARIABLE_HASHRATE':2000,   # In PH/s.
+    'VARIABLE_PCT':15,   # 85% to 115%
+    'VARIABLE_WINDOW':6,  # No of blocks averaged to determine revenue ratio
+    'MEMORY_GAIN':.01,            # if rev_ratio is 1.01, then the next block's HR will be 0.01*MEMORY_GAIN higher
 
-# Greedy hashrate switches chain if that chain is more profitable for
-# GREEDY_WINDOW BCC blocks.  It will only bother to switch if it has
-# consistently been GREEDY_PCT more profitable.
-GREEDY_HASHRATE = 2000     # In PH/s.
-GREEDY_PCT = 10
-GREEDY_WINDOW = 6
-
+    # Greedy hashrate switches chain if that chain is more profitable for
+    # GREEDY_WINDOW BCC blocks.  It will only bother to switch if it has
+    # consistently been GREEDY_PCT more profitable.
+    'GREEDY_HASHRATE':2000,     # In PH/s.
+    'GREEDY_PCT':10,
+    'GREEDY_WINDOW':6,
+}
 IDEAL_BLOCK_TIME = 10 * 60
 
 State = namedtuple('State', 'height wall_time timestamp bits chainwork fx '
-                   'hashrate rev_ratio greedy_frac msg')
+                   'hashrate rev_ratio memory_frac greedy_frac msg')
 
 states = []
 
@@ -93,7 +95,7 @@ states = []
 def print_headers():
     print(', '.join(['Height', 'FX', 'Block Time', 'Unix', 'Timestamp',
                      'Difficulty (bn)', 'Implied Difficulty (bn)',
-                     'Hashrate (PH/s)', 'Rev Ratio', 'Greedy?', 'Comments']))
+                     'Hashrate (PH/s)', 'Rev Ratio', 'memory_hashrate', 'Greedy?', 'Comments']))
 
 def print_state():
     state = states[-1]
@@ -117,11 +119,11 @@ def revenue_ratio(fx, BCC_target):
     '''Returns the instantaneous SWC revenue rate divided by the
     instantaneous BCC revenue rate.  A value less than 1.0 makes it
     attractive to mine BCC.  Greater than 1.0, SWC.'''
-    SWC_fees = 0.25 + 2.0 * random.random()
+    SWC_fees = 0.25 + 2.0 * random.random()/10
     SWC_revenue = 12.5 + SWC_fees
-    SWC_target = bits_to_target(INITIAL_SWC_BITS)
+    SWC_target = bits_to_target(default_params['INITIAL_SWC_BITS'])
 
-    BCC_fees = 0.2 * random.random()
+    BCC_fees = 0.2 * random.random()/10
     BCC_revenue = (12.5 + BCC_fees) * fx
 
     SWC_difficulty_ratio = BCC_target / SWC_target
@@ -294,8 +296,8 @@ def next_bits_wtema(msg, alpha_recip):
     # We use the reciprocal of alpha as an integer to avoid floating
     # point arithmetic.  Doing so the above formula maintains precision and
     # avoids overflows wih large targets in regtest
-    if states[-1].height % 2000 == 0:
-        return next_bits_cw(msg, 2000)
+    #if states[-1].height % 2000 == 0:
+    #    return next_bits_cw(msg, 2000)
 
     block_time = states[-1].timestamp - states[-2].timestamp
     prior_target = bits_to_target(states[-1].bits)
@@ -382,33 +384,56 @@ def next_fx_random(r):
 def next_fx_ramp(r):
     return states[-1].fx * 1.00017149454
 
-def next_step(algo, scenario, fx_jump_factor):
-    # First figure out our hashrate
+def next_hashrate(states, scenario, params):
     msg = []
-    high = 1.0 + VARIABLE_PCT / 100
-    scale_fac = 50 / VARIABLE_PCT
-    N = VARIABLE_WINDOW
+    high = 1.0 + params['VARIABLE_PCT'] / 100
+    scale_fac = 50 / params['VARIABLE_PCT']
+    N = params['VARIABLE_WINDOW']
     mean_rev_ratio = sum(state.rev_ratio for state in states[-N:]) / N
-    var_fraction = max(0, min(1, (high - mean_rev_ratio) * scale_fac))
+
+
+    
+    var_fraction = (high - mean_rev_ratio**params['VARIABLE_EXPONENT']) * scale_fac
+    memory_frac = states[-1].memory_frac +  ((var_fraction-.5) * params['MEMORY_GAIN'])
+    var_fraction = max(0, min(1, var_fraction + memory_frac))
+    
+
     if ((scenario.pump_144_threshold > 0) and
         (states[-1-144+5].timestamp - states[-1-144].timestamp > scenario.pump_144_threshold)):
         var_fraction = max(var_fraction, .25)
 
-    N = GREEDY_WINDOW
+
+    # mem_rev_ratio = sum(state.rev_ratio for state in states[-params['MEMORY_WINDOW']:]) / params['MEMORY_WINDOW']
+    # memdelta = (1-mem_rev_ratio**params['MEMORY_POWER'])*params['MEMORY_GAIN']
+    # if params['MEMORY_REMAINING']:
+    #     memory_frac = states[-1].memory_frac + memdelta*(1-states[-1].memory_frac)
+    # else:
+    #     memory_frac = states[-1].memory_frac + memdelta
+    # memory_frac = max(0.0, min(1.0, memory_frac))
+
+    N = params['GREEDY_WINDOW']
     gready_rev_ratio = sum(state.rev_ratio for state in states[-N:]) / N
     greedy_frac = states[-1].greedy_frac
-    if mean_rev_ratio >= 1 + GREEDY_PCT / 100:
+    if mean_rev_ratio >= 1 + params['GREEDY_PCT'] / 100:
         if greedy_frac != 0.0:
             msg.append("Greedy miners left")
         greedy_frac = 0.0
-    elif mean_rev_ratio <= 1 - GREEDY_PCT / 100:
+    elif mean_rev_ratio <= 1 - params['GREEDY_PCT'] / 100:
         if greedy_frac != 1.0:
             msg.append("Greedy miners joined")
         greedy_frac = 1.0
 
-    hashrate = (STEADY_HASHRATE + scenario.dr_hashrate
-                + VARIABLE_HASHRATE * var_fraction
-                + GREEDY_HASHRATE * greedy_frac)
+    hashrate = (params['STEADY_HASHRATE'] + scenario.dr_hashrate
+                + params['VARIABLE_HASHRATE'] * var_fraction
+                #+ params['MEMORY_HASHRATE'] * memory_frac
+                + params['GREEDY_HASHRATE'] * greedy_frac)
+
+    return hashrate, msg, memory_frac, greedy_frac
+
+def next_step(fx_jump_factor, params):
+    algo, scenario = params['algo'], params['scenario']
+    hashrate, msg, memory_frac, greedy_frac = next_hashrate(states, scenario, params)
+    # First figure out our hashrate
     # Calculate our dynamic difficulty
     bits = algo.next_bits(msg, **algo.params)
     target = bits_to_target(bits)
@@ -438,7 +463,7 @@ def next_step(algo, scenario, fx_jump_factor):
     # add a state
     states.append(State(states[-1].height + 1, wall_time, timestamp,
                         bits, chainwork, fx, hashrate, rev_ratio,
-                        greedy_frac, ' / '.join(msg)))
+                        memory_frac, greedy_frac, ' / '.join(msg)))
 
 Algo = namedtuple('Algo', 'next_bits params')
 
@@ -510,6 +535,15 @@ Algos = {
     }),
     'wtema-72' : Algo(next_bits_wtema, {
         'alpha_recip': 104, # floor(1/(1 - pow(.5, 1.0/72))), # half-life = 72
+    }),
+    'wtema-144' : Algo(next_bits_wtema, {
+        'alpha_recip': 208, 
+    }),
+    'wtema-288' : Algo(next_bits_wtema, {
+        'alpha_recip': 416,
+    }),
+    'wtema-576' : Algo(next_bits_wtema, {
+        'alpha_recip': 832,
     })
 }
 
@@ -526,16 +560,16 @@ Scenarios = {
     'ft100' : Scenario(next_fx_random, {}, -100, 0),
 }
 
-def run_one_simul(algo, scenario, print_it):
+def run_one_simul(print_it, returnstate=False, params=default_params):
     states.clear()
 
     # Initial state is afer 2020 steady prefix blocks
     N = 2020
     for n in range(-N, 0):
-        state = State(INITIAL_HEIGHT + n, INITIAL_TIMESTAMP + n * IDEAL_BLOCK_TIME,
-                      INITIAL_TIMESTAMP + n * IDEAL_BLOCK_TIME,
-                      INITIAL_BCC_BITS, INITIAL_SINGLE_WORK * (n + N + 1),
-                      INITIAL_FX, INITIAL_HASHRATE, 1.0, False, '')
+        state = State(params['INITIAL_HEIGHT'] + n, params['INITIAL_TIMESTAMP'] + n * IDEAL_BLOCK_TIME,
+                      params['INITIAL_TIMESTAMP'] + n * IDEAL_BLOCK_TIME,
+                      params['INITIAL_BCC_BITS'], bits_to_work(params['INITIAL_BCC_BITS']) * (n + N + 1),
+                      params['INITIAL_FX'], params['INITIAL_HASHRATE'], 0.5, 0.0, False, '')
         states.append(state)
 
     # Add 10 randomly-timed FX jumps (up or down 10 and 15 percent) to
@@ -543,14 +577,14 @@ def run_one_simul(algo, scenario, print_it):
     fx_jumps = {}
     factor_choices = [0.85, 0.9, 1.1, 1.15]
     for n in range(10):
-        fx_jumps[random.randrange(10000)] = random.choice(factor_choices)
+        fx_jumps[random.randrange(params['num_blocks'])] = random.choice(factor_choices)
 
     # Run the simulation
     if print_it:
         print_headers()
-    for n in range(10000):
+    for n in range(params['num_blocks']):
         fx_jump_factor = fx_jumps.get(n, 1.0)
-        next_step(algo, scenario, fx_jump_factor)
+        next_step(fx_jump_factor, params)
         if print_it:
             print_state()
 
@@ -559,6 +593,8 @@ def run_one_simul(algo, scenario, print_it):
 
     block_times = [simul[n + 1].timestamp - simul[n].timestamp
                    for n in range(len(simul) - 1)]
+    if returnstate:
+        return simul
     return block_times
 
 
