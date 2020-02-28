@@ -10,6 +10,7 @@ import time
 from collections import namedtuple
 from functools import partial
 from operator import attrgetter
+from threading import Lock
 
 def bits_to_target(bits):
     size = bits >> 24
@@ -63,6 +64,8 @@ default_params = {
     'INITIAL_TIMESTAMP':1503430225,
     'INITIAL_HASHRATE':1000,    # In PH/s.
     'INITIAL_HEIGHT':481824,
+    'BTC_fees':0.02,
+    'BCH_fees':0.002,
     'num_blocks':10000,
 
     # Steady hashrate mines the BCC chain all the time.  In PH/s.
@@ -86,10 +89,12 @@ default_params = {
 }
 IDEAL_BLOCK_TIME = 10 * 60
 
+
 State = namedtuple('State', 'height wall_time timestamp bits chainwork fx '
-                   'hashrate rev_ratio memory_frac greedy_frac msg')
+                   'hashrate rev_ratio var_frac memory_frac greedy_frac msg')
 
 states = []
+lock = Lock() # hack to deal with concurrency and global use of states
 
 
 def print_headers():
@@ -115,15 +120,15 @@ def print_state():
                      'Yes' if state.greedy_frac == 1.0 else 'No',
                      state.msg]))
 
-def revenue_ratio(fx, BCC_target):
+def revenue_ratio(fx, BCC_target, params):
     '''Returns the instantaneous SWC revenue rate divided by the
     instantaneous BCC revenue rate.  A value less than 1.0 makes it
     attractive to mine BCC.  Greater than 1.0, SWC.'''
-    SWC_fees = 0.25 + 2.0 * random.random()/10
+    SWC_fees = params['BTC_fees'] * random.random()
     SWC_revenue = 12.5 + SWC_fees
     SWC_target = bits_to_target(default_params['INITIAL_SWC_BITS'])
 
-    BCC_fees = 0.2 * random.random()/10
+    BCC_fees = params['BCH_fees'] * random.random()
     BCC_revenue = (12.5 + BCC_fees) * fx
 
     SWC_difficulty_ratio = BCC_target / SWC_target
@@ -428,11 +433,11 @@ def next_hashrate(states, scenario, params):
                 #+ params['MEMORY_HASHRATE'] * memory_frac
                 + params['GREEDY_HASHRATE'] * greedy_frac)
 
-    return hashrate, msg, memory_frac, greedy_frac
+    return hashrate, msg, var_fraction, memory_frac, greedy_frac
 
 def next_step(fx_jump_factor, params):
     algo, scenario = params['algo'], params['scenario']
-    hashrate, msg, memory_frac, greedy_frac = next_hashrate(states, scenario, params)
+    hashrate, msg, var_frac, memory_frac, greedy_frac = next_hashrate(states, scenario, params)
     # First figure out our hashrate
     # Calculate our dynamic difficulty
     bits = algo.next_bits(msg, **algo.params)
@@ -456,14 +461,14 @@ def next_step(fx_jump_factor, params):
     if fx_jump_factor != 1.0:
         msg.append('FX jumped by factor {:.2f}'.format(fx_jump_factor))
         fx *= fx_jump_factor
-    rev_ratio = revenue_ratio(fx, target)
+    rev_ratio = revenue_ratio(fx, target, params)
 
     chainwork = states[-1].chainwork + bits_to_work(bits)
 
     # add a state
     states.append(State(states[-1].height + 1, wall_time, timestamp,
                         bits, chainwork, fx, hashrate, rev_ratio,
-                        memory_frac, greedy_frac, ' / '.join(msg)))
+                        var_frac, memory_frac, greedy_frac, ' / '.join(msg)))
 
 Algo = namedtuple('Algo', 'next_bits params')
 
@@ -485,7 +490,7 @@ Algos = {
         'fast_blocks_pct': 95,
     }),
     'd-1' : Algo(next_bits_d, {}),
-    'cw-72' : Algo(next_bits_cw, {
+    'cw-072' : Algo(next_bits_cw, {
         'block_count': 72,
     }),
     'cw-108' : Algo(next_bits_cw, {
@@ -501,7 +506,7 @@ Algos = {
     'wt-144' : Algo(next_bits_wt, {
         'block_count': 144
     }),
-    'dgw3-24' : Algo(next_bits_dgw3, { # 24-blocks, like Dash
+    'dgw3-024' : Algo(next_bits_dgw3, { # 24-blocks, like Dash
         'block_count': 24,
     }),
     'dgw3-144' : Algo(next_bits_dgw3, { # 1 full day
@@ -533,7 +538,7 @@ Algos = {
     'emai-1d' : Algo(next_bits_ema_int_approx, {
         'window': 24 * 60 * 60,
     }),
-    'wtema-72' : Algo(next_bits_wtema, {
+    'wtema-072' : Algo(next_bits_wtema, {
         'alpha_recip': 104, # floor(1/(1 - pow(.5, 1.0/72))), # half-life = 72
     }),
     'wtema-144' : Algo(next_bits_wtema, {
@@ -561,40 +566,48 @@ Scenarios = {
 }
 
 def run_one_simul(print_it, returnstate=False, params=default_params):
+    lock.acquire()
     states.clear()
 
-    # Initial state is afer 2020 steady prefix blocks
-    N = 2020
-    for n in range(-N, 0):
-        state = State(params['INITIAL_HEIGHT'] + n, params['INITIAL_TIMESTAMP'] + n * IDEAL_BLOCK_TIME,
-                      params['INITIAL_TIMESTAMP'] + n * IDEAL_BLOCK_TIME,
-                      params['INITIAL_BCC_BITS'], bits_to_work(params['INITIAL_BCC_BITS']) * (n + N + 1),
-                      params['INITIAL_FX'], params['INITIAL_HASHRATE'], 0.5, 0.0, False, '')
-        states.append(state)
+    try:
+        # Initial state is afer 2020 steady prefix blocks
+        N = 2020
+        for n in range(-N, 0):
+            state = State(params['INITIAL_HEIGHT'] + n, params['INITIAL_TIMESTAMP'] + n * IDEAL_BLOCK_TIME,
+                          params['INITIAL_TIMESTAMP'] + n * IDEAL_BLOCK_TIME,
+                          params['INITIAL_BCC_BITS'], bits_to_work(params['INITIAL_BCC_BITS']) * (n + N + 1),
+                          params['INITIAL_FX'], params['INITIAL_HASHRATE'], 0.0, 0.5, 0.0, False, '')
+            states.append(state)
 
-    # Add 10 randomly-timed FX jumps (up or down 10 and 15 percent) to
-    # see how algos recalibrate
-    fx_jumps = {}
-    factor_choices = [0.85, 0.9, 1.1, 1.15]
-    for n in range(10):
-        fx_jumps[random.randrange(params['num_blocks'])] = random.choice(factor_choices)
+        # Add a few randomly-timed FX jumps (up or down 10 and 15 percent) to
+        # see how algos recalibrate
+        fx_jumps = {}
+        num_fx_jumps = 2 + params['num_blocks']/3000
+        factor_choices = [0.85, 0.9, 1.1, 1.15]
+        for n in range(10):
+            fx_jumps[random.randrange(params['num_blocks'])] = random.choice(factor_choices)
 
-    # Run the simulation
-    if print_it:
-        print_headers()
-    for n in range(params['num_blocks']):
-        fx_jump_factor = fx_jumps.get(n, 1.0)
-        next_step(fx_jump_factor, params)
+        # Run the simulation
         if print_it:
-            print_state()
+            print_headers()
+        for n in range(params['num_blocks']):
+            fx_jump_factor = fx_jumps.get(n, 1.0)
+            next_step(fx_jump_factor, params)
+            if print_it:
+                print_state()
 
-    # Drop the prefix blocks to be left with the simulation blocks
-    simul = states[N:]
+        # Drop the prefix blocks to be left with the simulation blocks
+        simul = states[N:]
+    except err:
+        lock.release()
+        raise err
+    lock.release()
+
+    if returnstate:
+        return simul
 
     block_times = [simul[n + 1].timestamp - simul[n].timestamp
                    for n in range(len(simul) - 1)]
-    if returnstate:
-        return simul
     return block_times
 
 

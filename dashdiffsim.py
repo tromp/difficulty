@@ -13,16 +13,20 @@ import mining
 
 sys.setrecursionlimit(100000)
 
+MAX_BLOCKS = 50000
+
 params = {'algo':['wtema-144', 'cw-144'],
           'scenario':'default',
           'num_blocks':4000,
 
           'INITIAL_BCC_BITS':0x18084bb7,
           'INITIAL_SWC_BITS':0x18013ce9,
-          'INITIAL_FX':0.2,
+          'INITIAL_FX':0.15,
           'INITIAL_TIMESTAMP':1503430225,
           'INITIAL_HASHRATE':1000,    # In PH/s.
           'INITIAL_HEIGHT':481824,
+          'BTC_fees':0.02,
+          'BCH_fees':0.002,
 
           # Steady hashrate mines the BCC chain all the time.  In PH/s.
           'STEADY_HASHRATE':300,
@@ -33,7 +37,7 @@ params = {'algo':['wtema-144', 'cw-144'],
           # chain is linear between +- 15%.
           'VARIABLE_HASHRATE':10000, # In PH/s.
           'VARIABLE_PCT':15,        # 85% to 115%
-          'VARIABLE_WINDOW':6,      # No of blocks averaged to determine revenue ratio
+          'VARIABLE_WINDOW':2,      # No of blocks averaged to determine revenue ratio
           'VARIABLE_EXPONENT':.5,     # Hashrate = k * f(rev_ratio) ** exponent
           'MEMORY_GAIN':.005,         # if rev_ratio**POWER is 1.01, then the next block's HR will be 0.01*MEMORY_GAIN higher
 
@@ -41,13 +45,13 @@ params = {'algo':['wtema-144', 'cw-144'],
           # GREEDY_WINDOW BCC blocks.  It will only bother to switch if it has
           # consistently been GREEDY_PCT more profitable.
           'GREEDY_HASHRATE':0,     # In PH/s.
-          'GREEDY_PCT':10,
-          'GREEDY_WINDOW':6,
+          'GREEDY_PCT':3,
+          'GREEDY_WINDOW':1,
           }
 
 debug=3
 
-seed = 100000 #random.randint(0, 2**32-2) # you can also set this to a specific integer for repeatability
+seed = 100 #random.randint(0, 2**32-2) # you can also set this to a specific integer for repeatability
 print("Seed = %i" % seed)
 
 class Nothing:
@@ -85,13 +89,15 @@ if __name__ == "__main__":
           df['rev_ratios']   = [1/state.rev_ratio for state in states]
           df['bits']         = [state.bits for state in states]
           df['difficulties'] = [mining.TARGET_1 / mining.bits_to_target(state.bits) for state in states]
-          df['states'] = states
+          df['greedy_fracs'] = [state.greedy_frac for state in states]
+          df['var_fracs']    = [state.var_frac for state in states]
+          #df['states'] = states
           dataframes.append(df)
         return dataframes
 
     print(params)
     app.layout = html.Div(children=[
-        html.H1(children="jtoomim's Difficulty simulation (alpha version)"),
+        html.H1(children="jtoomim's difficulty simulation (alpha version)"),
 
         html.Div([
           html.H6("Difficulty adjustment algorithm", style={'marginRight': '1em'}),
@@ -135,6 +141,12 @@ if __name__ == "__main__":
             id='intervals-graph',
             figure={},
         ),        
+        dcc.Graph(
+            id='conftimes-graph',
+            figure={},
+        ),
+
+        html.Div(id='profits', children=[]),
 
         html.Div(children=(html.H4("Advanced configuration"))),
         html.Div(children=(dcc.Input(id='Seed', value=seed, type="number", name="Randomness seed"),
@@ -147,44 +159,50 @@ if __name__ == "__main__":
         # html.Div(children=(dcc.Input(id='', value=params[''], type="number", 
         #                        step=100, min=100, max=50000, required=True, persistence=True),
         #                    html.H6("")), style={'display':'flex'}),
-        html.Div(children=(dcc.Input(id='initial_fx', value=params['INITIAL_FX'], type="number", 
+        html.Div(children=(dcc.Input(id='initial_fx', value=params['INITIAL_FX'], type="number",
                                step=0.01, min=0.0001, max=10, required=True, persistence=True),
                            html.H6("Initial BCH/BTC exchange rate")), style={'display':'flex'}),
+        html.Div(children=(dcc.Input(id='btc_fees', value=params['BTC_fees'], type="number",
+                               step=0.01, min=0, max=12.5, required=True, persistence=True),
+                           html.H6("Maximum BTC fees (randomized per block)")), style={'display':'flex'}),
+        html.Div(children=(dcc.Input(id='bch_fees', value=params['BCH_fees'], type="number",
+                               step=0.01, min=0, max=12.5, required=True, persistence=True),
+                           html.H6("Maximum BCH fees (randomized per block)")), style={'display':'flex'}),
 
         html.Div(children=(html.H6("Consistent miners"), "Consistent miners never leave BCH, no matter how much money they make or lose.")),
-        html.Div(children=(dcc.Input(id='steady_hashrate', value=params['STEADY_HASHRATE'], type="number", 
-                               step=100, min=0, max=50000, required=True, persistence=True),
+        html.Div(children=(dcc.Input(id='steady_hashrate', value=params['STEADY_HASHRATE'], type="number",
+                               step=100, min=0, max=500000, required=True, persistence=True),
                            html.H6("Hashrate of consistent miners (PH/s)")), style={'display':'flex'}),
-        html.Div(children=(html.H6("Variable miners"), 
+        html.Div(children=(html.H6("Variable miners"),
                            "Variable miners split their hashrate between BCH and BTC depending on the ratio of "
-                           "profitability over the last N blocks. Formula:\n", 
+                           "profitability over the last N blocks. Formula:\n",
                            "var_fraction = ((1+var_pct/100) - mean_rev_ratio^var_exponent) * scale_factor\n")),
-        html.Div(children=(dcc.Input(id='variable_hashrate', value=params['VARIABLE_HASHRATE'], type="number", 
-                               step=500, min=0, max=50000, required=True, persistence=True),
+        html.Div(children=(dcc.Input(id='variable_hashrate', value=params['VARIABLE_HASHRATE'], type="number",
+                               step=500, min=0, max=500000, required=True, persistence=True),
                            html.H6("Hashrate of variable miners")), style={'display':'flex'}),
-        html.Div(children=(dcc.Input(id='variable_pct', value=params['VARIABLE_PCT'], type="number", 
+        html.Div(children=(dcc.Input(id='variable_pct', value=params['VARIABLE_PCT'], type="number",
                                step=1, min=0, max=100, required=True, persistence=True),
                            html.H6("var_pct: The profitability percent at which to allocate 100% of variable hashrate")), style={'display':'flex'}),
-        html.Div(children=(dcc.Input(id='variable_exponent', value=params['VARIABLE_EXPONENT'], type="number", 
+        html.Div(children=(dcc.Input(id='variable_exponent', value=params['VARIABLE_EXPONENT'], type="number",
                                step=0.1, min=0, max=100, required=True, persistence=True),
                            html.H6("var_exponent: higher values create more aggressive switching and more oscillations")), style={'display':'flex'}),
-        html.Div(children=(dcc.Input(id='variable_window', value=params['VARIABLE_WINDOW'], type="number", 
+        html.Div(children=(dcc.Input(id='variable_window', value=params['VARIABLE_WINDOW'], type="number",
                                step=1, min=0, max=100, required=True, persistence=True),
                            html.H6("var_window: Number of blocks averaged to determine revenue ratio")), style={'display':'flex'}),
-        html.Div(children=(dcc.Input(id='memory_gain', value=params['MEMORY_GAIN'], type="number", 
+        html.Div(children=(dcc.Input(id='memory_gain', value=params['MEMORY_GAIN'], type="number",
                                step=0.001, min=0, max=1, required=True, persistence=True),
                            html.H6("memory_gain: What proportion of variable hashrate will stick around even if profitability falls next block")), style={'display':'flex'}),
 
 
-        html.Div(children=(html.H6("Greedy miners"), 
+        html.Div(children=(html.H6("Greedy miners"),
                            "Greedy miners switch all of their hashrate onto BCH if profitability over the last N blocks exceeds their threshold.")),
-        html.Div(children=(dcc.Input(id='greedy_hashrate', value=params['GREEDY_HASHRATE'], type="number", 
-                               step=500, min=0, max=50000, required=True, persistence=True),
+        html.Div(children=(dcc.Input(id='greedy_hashrate', value=params['GREEDY_HASHRATE'], type="number",
+                               step=500, min=0, max=500000, required=True, persistence=True),
                            html.H6("Hashrate of greedy miners")), style={'display':'flex'}),
-        html.Div(children=(dcc.Input(id='greedy_pct', value=params['GREEDY_PCT'], type="number", 
+        html.Div(children=(dcc.Input(id='greedy_pct', value=params['GREEDY_PCT'], type="number",
                                step=1, min=0, max=100, required=True, persistence=True),
                            html.H6("greedy_pct: The greedy miners' threshold for hashing")), style={'display':'flex'}),
-        html.Div(children=(dcc.Input(id='greedy_window', value=params['GREEDY_WINDOW'], type="number", 
+        html.Div(children=(dcc.Input(id='greedy_window', value=params['GREEDY_WINDOW'], type="number",
                                step=1, min=0, max=100, required=True, persistence=True),
                            html.H6("greedy_window: Number of blocks averaged to determine revenue ratio")), style={'display':'flex'}),
 
@@ -198,6 +216,8 @@ if __name__ == "__main__":
          Input(component_id='scenario-dropdown',  component_property='value'),
          Input(component_id='blocks',             component_property='value'),
          Input(component_id='initial_fx',         component_property='value'),
+         Input(component_id='btc_fees',           component_property='value'),
+         Input(component_id='bch_fees',           component_property='value'),
          Input(component_id='steady_hashrate',    component_property='value'),
          Input(component_id='variable_hashrate',  component_property='value'),
          Input(component_id='variable_pct',       component_property='value'),
@@ -209,19 +229,24 @@ if __name__ == "__main__":
          Input(component_id='greedy_window',      component_property='value'),
          Input(component_id='Seed',               component_property='value'),
          ])
-    def update_results_of_run(algo, scenario, num_blocks, initial_fx, steady_hashrate,
-                              variable_hashrate, variable_pct, variable_window, 
-                              variable_exponent, memory_gain, greedy_hashrate,
-                              greedy_pct, greedy_window, seed):
+    def update_results_of_run(algo, scenario, num_blocks, initial_fx, btc_fees,
+                              bch_fees, steady_hashrate, variable_hashrate,
+                              variable_pct, variable_window, variable_exponent,
+                              memory_gain, greedy_hashrate, greedy_pct,
+                              greedy_window, seed):
         if not type(num_blocks) == int:
           num_blocks = 1000
         elif num_blocks < 100:
           num_blocks = 100
-        elif num_blocks > 50000:
-          num_blocks = 50000
+        elif num_blocks > MAX_BLOCKS:
+          num_blocks = MAX_BLOCKS
 
         if not type(initial_fx) in (int, float):
           initial_fx = 0.18
+        if not type(btc_fees) in (int, float):
+          btc_fees = 0.02
+        if not type(bch_fees) in (int, float):
+          bch_fees = 0.002
         if not type(steady_hashrate) in (int, float):
           steady_hashrate = 300
         if not type(variable_hashrate) in (int, float):
@@ -271,11 +296,11 @@ if __name__ == "__main__":
         for i in range(len(dfs)):
           df = dfs[i]
           name = df['name']
-          datalist.append({'x': list(map(lambda x: (x-df['wall_times'][0])/3600, df['wall_times'])), 
+          datalist.append({'x': list(map(lambda x: (x-df['wall_times'][0])/3600/24, df['wall_times'])), 
                           'y': df['difficulties'], 
                           'mode':'lines', 'name':name})
         return {'data': datalist,
-               'layout': {'title': "Difficulty", 'xaxis': {'title':'Hours since start'}, 'yaxis': {'title':"Difficulty"}}}
+               'layout': {'title': "Difficulty", 'xaxis': {'title':'Days since start'}, 'yaxis': {'title':"Difficulty"}}}
     @app.callback(Output(component_id='hashrate-graph', component_property='figure'),
                   [Input(component_id='results_of_run', component_property='children')])
     def update_hashrate_graph(pickled_results):
@@ -287,11 +312,11 @@ if __name__ == "__main__":
         for i in range(len(dfs)):
           df = dfs[i]
           name = df['name']
-          datalist.append({'x': list(map(lambda x: (x-df['wall_times'][0])/3600, df['wall_times'])), 
+          datalist.append({'x': list(map(lambda x: (x-df['wall_times'][0])/3600/24, df['wall_times'])), 
                           'y': df['hashrates'], 
                           'mode':'lines', 'name':name,})# 'line':{'color':'blue'}}
         return {'data': datalist,
-               'layout': {'title': "BCH Hashrate", 'xaxis': {'title':'Hours since start'}, 'yaxis': {'title':"Hashrate", "type":"log"}}}
+               'layout': {'title': "BCH Hashrate", 'xaxis': {'title':'Days since start'}, 'yaxis': {'title':"Hashrate", "type":"log"}}}
 
 
     @app.callback(Output(component_id='revratio-graph', component_property='figure'),
@@ -321,10 +346,11 @@ if __name__ == "__main__":
         start = 6
         stop = 10800
         exp = (stop/start)**(1/steps)
-        intervals = [(stop/exp**steps) * exp**i for i in range(0, steps)]
+        intervals = [0] + [(stop/exp**steps) * exp**i for i in range(0, steps)]
         for df in dfs:
-          idealbins = [len(df['wall_times']) * ((1-e**-(intervals[i]/600)) - (1-e**-(intervals[i-1]/600))) for i in range(1, steps)]
-          unitybins = [1. for i in range(1, steps)]
+          idealbins = [len(df['wall_times']) * ((1-e**-(intervals[i]/600)) - (1-e**-(intervals[i-1]/600))) for i in range(1, steps+1)]
+          idealbins[-1] = len(df['wall_times']) * (e**-(intervals[-1]/600))
+          unitybins = [1. for i in range(1, steps+1)]
           blocktimes = [df['wall_times'][i] - df['wall_times'][i-1] for i in range(1, len(df['wall_times']))]
           blocktimes.sort()
           c = 0
@@ -344,7 +370,6 @@ if __name__ == "__main__":
             c += 1
           bins[i] = c
           intervalcenters = [(interval*(1/exp)) for interval in intervals]
-          bins = bins[:-1]
           print(df['name'], below_60_sec, above_1800_sec)
           datalist.append({'x': intervalcenters, 
                           'y': bins, 
@@ -357,6 +382,41 @@ if __name__ == "__main__":
                'layout': {'title': "Relative frequency of block intervals", 
                           'xaxis': {'title':'Block interval (sec)', 'type':'log'}, 
                           'yaxis': {'title':"Bias in number of observations", 'type':'log', 'range':[-.5, 2.0]}}}
+
+    @app.callback(Output(component_id='conftimes-graph', component_property='figure'),
+                  [Input(component_id='results_of_run', component_property='children')])
+    def update_conftimes_graph(pickled_results):
+        dfs = json.loads(pickled_results)
+        datalist = []
+        def conftimesSMA(wnd, df):
+          tsdiffs = [df['wall_times'][i+1] - df['wall_times'][i] for i in range(len(df['wall_times'])-1)]
+          return [ sum([d*d for d in tsdiffs[i:i+wnd]]) / (df['wall_times'][i+wnd] - df['wall_times'][i]) / 60 / 2 for i in range(len(tsdiffs)-wnd)]
+
+
+        for i in range(len(dfs)):
+          df = dfs[i]
+          name = df['name']
+          smasize = int(max(24, min(2016, len(df['wall_times'])/50)))
+          datalist.append({'x': list(map(lambda x: (x-df['wall_times'][0])/3600/24, df['wall_times'])), 
+                          'y': conftimesSMA(smasize, df), 
+                          'mode':'lines', 'name':name})
+        return {'data': datalist,
+               'layout': {'title': "Avg confirmation time (%s block moving average)" % smasize, 
+                          'xaxis': {'title':'Days since start'}, 
+                          'yaxis': {'title':"Confirmation time (minutes)", 'range':[0, 60.0]}}}
+
+
+    @app.callback(Output(component_id='profits', component_property='children'),
+                  [Input(component_id='results_of_run', component_property='children')])
+    def update_profits(pickled_results):
+      dfs = json.loads(pickled_results)
+      elements = [html.H4("Profitability of different mining strategies")]
+      for df in dfs:
+        greedy_profits = sum([(1-greedy_frac) + (greedy_frac*rev_ratio) for greedy_frac, rev_ratio in zip(df['greedy_fracs'], df['rev_ratios'])])/len(df['greedy_fracs'])
+        var_profits    = sum([(1-var_frac)    + (var_frac   *rev_ratio) for var_frac,    rev_ratio in zip(df['var_fracs'],    df['rev_ratios'])])/len(df['var_fracs'])
+        steady_profits = sum([rev_ratio for rev_ratio in df['rev_ratios']])/len(df['rev_ratios'])
+        elements.append(html.P("%s: %4.2f%% greedy, %5.3f%% variable, %5.3f%% steady" % (df['name'], 100*greedy_profits-100, 100*var_profits-100, 100*steady_profits-100)))
+      return elements
 
 
 
