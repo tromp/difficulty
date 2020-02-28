@@ -411,6 +411,8 @@ if __name__ == "__main__":
     def update_profits(pickled_results):
       dfs = json.loads(pickled_results)
       elements = [html.H4("Profitability of different mining strategies")]
+      if len(dfs[0]['rev_ratios']) < 20000:
+        elements.append(html.H6("Warning: These numbers are inaccurate for shorter simulations. It is recommended to simulate at least 20,000 blocks if you are interested in these statistics."))
       for df in dfs:
         greedy_profits = sum([(1-greedy_frac) + (greedy_frac*rev_ratio) for greedy_frac, rev_ratio in zip(df['greedy_fracs'], df['rev_ratios'])])/len(df['greedy_fracs'])
         var_profits    = sum([(1-var_frac)    + (var_frac   *rev_ratio) for var_frac,    rev_ratio in zip(df['var_fracs'],    df['rev_ratios'])])/len(df['var_fracs'])
