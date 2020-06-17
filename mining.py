@@ -310,6 +310,13 @@ def next_bits_wtema(msg, alpha_recip):
     next_target *= block_time + IDEAL_BLOCK_TIME * (alpha_recip - 1)
     return target_to_bits(next_target)
 
+def next_bits_asert(msg, tau):
+    blocks_time = states[-1].timestamp - states[0].timestamp
+    height_diff = states[-1].height - states[0].height
+    orig_target = bits_to_target(states[-0].bits)
+    next_target = int(orig_target * math.e**((blocks_time - IDEAL_BLOCK_TIME*(height_diff+1)) / tau))
+    return target_to_bits(next_target)
+
 def next_bits_dgw3(msg, block_count):
     ''' Dark Gravity Wave v3 from Dash '''
     block_reading = -1 # dito
@@ -537,6 +544,15 @@ Algos = {
     }),
     'emai-1d' : Algo(next_bits_ema_int_approx, {
         'window': 24 * 60 * 60,
+    }),
+    'asert-072' : Algo(next_bits_asert, {
+        'tau': (IDEAL_BLOCK_TIME * 104),
+    }),
+    'asert-144' : Algo(next_bits_asert, {
+        'tau': (IDEAL_BLOCK_TIME * 208),
+    }),
+    'asert-288' : Algo(next_bits_asert, {
+        'tau': (IDEAL_BLOCK_TIME * 416),
     }),
     'wtema-072' : Algo(next_bits_wtema, {
         'alpha_recip': 104, # floor(1/(1 - pow(.5, 1.0/72))), # half-life = 72
