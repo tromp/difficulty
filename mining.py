@@ -317,6 +317,17 @@ def next_bits_asert(msg, tau):
     next_target = int(orig_target * math.e**((blocks_time - IDEAL_BLOCK_TIME*(height_diff+1)) / tau))
     return target_to_bits(next_target)
 
+def next_bits_lwma(msg, n):
+    block_intervals = [states[-(1+i)].timestamp - states[-(2+i)].timestamp for i in range(n)]
+    block_works     = [states[-(1+i)].chainwork - states[-(2+i)].chainwork for i in range(n)]
+    weighted_intervals = [block_intervals[i] * (n-i) for i in range(n)]
+    weighted_works     = [block_works[i]     * (n-i) for i in range(n)]
+
+    weighted_timespan = sum(weighted_intervals)
+    weighted_work = sum(weighted_works)
+    work = (weighted_work) * IDEAL_BLOCK_TIME // weighted_timespan
+    return target_to_bits((2 << 255) // work - 1)
+
 def next_bits_dgw3(msg, block_count):
     ''' Dark Gravity Wave v3 from Dash '''
     block_reading = -1 # dito
@@ -511,7 +522,16 @@ Algos = {
         'block_count': 180,
     }),
     'wt-144' : Algo(next_bits_wt, {
-        'block_count': 144
+        'block_count': 144*2
+    }),
+    'wt-190' : Algo(next_bits_wt, {
+        'block_count': 190*2
+    }),
+    'wt-288' : Algo(next_bits_wt, {
+        'block_count': 288*2
+    }),
+    'wt-576' : Algo(next_bits_wt, {
+        'block_count': 576*2
     }),
     'dgw3-024' : Algo(next_bits_dgw3, { # 24-blocks, like Dash
         'block_count': 24,
@@ -545,26 +565,47 @@ Algos = {
     'emai-1d' : Algo(next_bits_ema_int_approx, {
         'window': 24 * 60 * 60,
     }),
+    'lwma-072' : Algo(next_bits_lwma, {
+        'n': 72*2,
+    }),
+    'lwma-144' : Algo(next_bits_lwma, {
+        'n': 144*2,
+    }),
+    'lwma-190' : Algo(next_bits_lwma, {
+        'n': 190*2,
+    }),
+    'lwma-240' : Algo(next_bits_lwma, {
+        'n': 240*2,
+    }),
+    'lwma-288' : Algo(next_bits_lwma, {
+        'n': 288*2,
+    }),
+    'lwma-576' : Algo(next_bits_lwma, {
+        'n': 576*2,
+    }),
     'asert-072' : Algo(next_bits_asert, {
-        'tau': (IDEAL_BLOCK_TIME * 104),
+        'tau': (IDEAL_BLOCK_TIME * 72),
     }),
     'asert-144' : Algo(next_bits_asert, {
-        'tau': (IDEAL_BLOCK_TIME * 208),
+        'tau': (IDEAL_BLOCK_TIME * 144),
     }),
     'asert-288' : Algo(next_bits_asert, {
-        'tau': (IDEAL_BLOCK_TIME * 416),
+        'tau': (IDEAL_BLOCK_TIME * 288),
+    }),
+    'asert-576' : Algo(next_bits_asert, {
+        'tau': (IDEAL_BLOCK_TIME * 576),
     }),
     'wtema-072' : Algo(next_bits_wtema, {
-        'alpha_recip': 104, # floor(1/(1 - pow(.5, 1.0/72))), # half-life = 72
+        'alpha_recip': 72, # floor(1/(1 - pow(.5, 1.0/72))), # half-life = 72
     }),
     'wtema-144' : Algo(next_bits_wtema, {
-        'alpha_recip': 208, 
+        'alpha_recip': 144, 
     }),
     'wtema-288' : Algo(next_bits_wtema, {
-        'alpha_recip': 416,
+        'alpha_recip': 288,
     }),
     'wtema-576' : Algo(next_bits_wtema, {
-        'alpha_recip': 832,
+        'alpha_recip': 576,
     })
 }
 
