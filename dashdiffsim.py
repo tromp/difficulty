@@ -146,6 +146,7 @@ if __name__ == "__main__":
             figure={},
         ),
 
+        html.Div(id='conftimes', children=[]),
         html.Div(id='profits', children=[]),
 
         html.Div(children=(html.H4("Advanced configuration"))),
@@ -405,6 +406,33 @@ if __name__ == "__main__":
                           'xaxis': {'title':'Days since start'}, 
                           'yaxis': {'title':"Confirmation time (minutes)", 'range':[0, 60.0]}}}
 
+    @app.callback(Output(component_id='conftimes', component_property='children'),
+                  [Input(component_id='results_of_run', component_property='children')])
+    def update_conftimes(pickled_results):
+        dfs = json.loads(pickled_results)
+        datalist = []
+        elements = [html.H4("Confirmation times")]
+
+        def blocktimes(df):
+          runlength = (df['wall_times'][-1] - df['wall_times'][0])
+          return runlength / len(df['wall_times'])
+        def conftimes(df):
+          tsdiffs = [df['wall_times'][i+1] - df['wall_times'][i] for i in range(len(df['wall_times'])-1)]
+          runlength = (df['wall_times'][-1] - df['wall_times'][0])
+
+          return sum([d*d for d in tsdiffs]) / (df['wall_times'][-1] - df['wall_times'][0]) / 2
+
+        if len(dfs[0]['rev_ratios']) < 5000:
+          elements.append(html.H6("Warning: These numbers are inaccurate for shorter simulations. It is recommended " +
+                                  "to simulate at least 5,000 blocks if you are interested in these statistics."))
+
+        rows = [html.Tr([html.Th("Algorithm"), html.Th("Block interval (sec)"), html.Th("Confirmation time (sec)")])]
+        for df in dfs:
+          bt = blocktimes(df)
+          ct = conftimes(df)
+          rows.append(html.Tr([html.Td(df['name']), html.Td("%5.2f"%bt), html.Td("%5.2f"%ct)]))
+        elements.append(html.Table(rows))
+        return elements
 
     @app.callback(Output(component_id='profits', component_property='children'),
                   [Input(component_id='results_of_run', component_property='children')])
@@ -413,13 +441,23 @@ if __name__ == "__main__":
       elements = [html.H4("Profitability of different mining strategies")]
       if len(dfs[0]['rev_ratios']) < 20000:
         elements.append(html.H6("Warning: These numbers are inaccurate for shorter simulations. It is recommended to simulate at least 20,000 blocks if you are interested in these statistics."))
+     
+      rows = [html.Tr([html.Th("Algorithm"), html.Th("Greedy"), html.Th("Variable"), html.Th("Steady")])]
       for df in dfs:
-        greedy_profits = sum([(1-greedy_frac) + (greedy_frac*rev_ratio) for greedy_frac, rev_ratio in zip(df['greedy_fracs'], df['rev_ratios'])])/len(df['greedy_fracs'])
-        var_profits    = sum([(1-var_frac)    + (var_frac   *rev_ratio) for var_frac,    rev_ratio in zip(df['var_fracs'],    df['rev_ratios'])])/len(df['var_fracs'])
-        steady_profits = sum([rev_ratio for rev_ratio in df['rev_ratios']])/len(df['rev_ratios'])
-        elements.append(html.P("%s: %4.2f%% greedy, %5.3f%% variable, %5.3f%% steady" % (df['name'], 100*greedy_profits-100, 100*var_profits-100, 100*steady_profits-100)))
-      return elements
+        IBT = mining.IDEAL_BLOCK_TIME
+        tsdiffs = [df['wall_times'][i+1] - df['wall_times'][i] for i in range(len(df['wall_times'])-1)]
+        tsdiffs.append(tsdiffs[-1])
+        timecorrection = sum(tsdiffs)/(IBT*len(tsdiffs))
+        greedy_profits = sum([ts/IBT*((1-greedy_frac) + (greedy_frac*rev_ratio)) for greedy_frac, rev_ratio, ts in zip(df['greedy_fracs'], df['rev_ratios'], tsdiffs)])/len(df['greedy_fracs']) / timecorrection
+        var_profits    = sum([ts/IBT*((1-var_frac)    + (var_frac   *rev_ratio)) for var_frac,    rev_ratio, ts in zip(df['var_fracs'],    df['rev_ratios'], tsdiffs)])/len(df['var_fracs']) / timecorrection
+        steady_profits = sum([ts/IBT*rev_ratio for rev_ratio, ts in zip(df['rev_ratios'], tsdiffs)])/len(df['rev_ratios']) / timecorrection
+        rows.append(html.Tr([html.Td(df['name']), 
+          html.Td("%5.3f%%"%(100*greedy_profits-100)), 
+          html.Td("%5.3f%%"%(100*var_profits-100)), 
+          html.Td("%5.3f%%"%(100*steady_profits-100))]))
 
+      elements.append(html.Table(rows))
+      return elements
 
 
     app.run_server(debug=True, host='0.0.0.0')
