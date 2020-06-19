@@ -592,8 +592,32 @@ Algos = {
     'asert-288' : Algo(next_bits_asert, {
         'tau': (IDEAL_BLOCK_TIME * 288),
     }),
+    'asert-342' : Algo(next_bits_asert, {
+        'tau': (IDEAL_BLOCK_TIME * 342),
+    }),
+    'asert-407' : Algo(next_bits_asert, {
+        'tau': (IDEAL_BLOCK_TIME * 407),
+    }),
+    'asert-484' : Algo(next_bits_asert, {
+        'tau': (IDEAL_BLOCK_TIME * 484),
+    }),
     'asert-576' : Algo(next_bits_asert, {
         'tau': (IDEAL_BLOCK_TIME * 576),
+    }),
+    'asert-685' : Algo(next_bits_asert, {
+        'tau': (IDEAL_BLOCK_TIME * 685),
+    }),
+    'asert-815' : Algo(next_bits_asert, {
+        'tau': (IDEAL_BLOCK_TIME * 815),
+    }),
+    'asert-969' : Algo(next_bits_asert, {
+        'tau': (IDEAL_BLOCK_TIME * 969),
+    }),
+    'asert-1152' : Algo(next_bits_asert, {
+        'tau': (IDEAL_BLOCK_TIME * 1152),
+    }),
+    'asert-2304' : Algo(next_bits_asert, {
+        'tau': (IDEAL_BLOCK_TIME * 2304),
     }),
     'wtema-072' : Algo(next_bits_wtema, {
         'alpha_recip': 72, # floor(1/(1 - pow(.5, 1.0/72))), # half-life = 72
