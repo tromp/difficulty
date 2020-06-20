@@ -641,9 +641,6 @@ Algos = {
     'simpexpi-1d' : Algo(next_bits_simple_exponential_int_approx, {
         'window': 24 * 60 * 60,
     }),
-    'emai-1d' : Algo(next_bits_ema_int_approx, {
-        'window': 24 * 60 * 60,
-    }),
     'lwma-072' : Algo(next_bits_lwma, {
         'n': 72*2,
     }),
