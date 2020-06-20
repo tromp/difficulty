@@ -353,6 +353,16 @@ def next_bits_asert_discrete(msg, window, granularity):
     # We divide by the factors here, rather than multiply, because we're actually adjusting target, not difficulty:
     new_target = (old_target << FACTOR_SCALING_BITS) // BLOCK_DIFFICULTY_INCREASE_FACTOR[window // IDEAL_BLOCK_TIME]
     if new_segment_number > old_segment_number:
+        # Doing this in a simple for loop means that a pathological block time (far in past or future) could make this very slow.  I'm not sure such blocks ever actually occur,
+        # but if this were a concern we could speed this up via https://en.wikipedia.org/wiki/Exponentiation_by_squaring.  Eg, if the two block times are 20 segments apart, a naive
+        # loop does 20 multiplications/divisions (plus bit-shifts), whereas exp by squaring could do it in 6 as follows:
+        #     e**(2/100)  = (e**(1/100))**2
+        #     e**(4/100)  = (e**(2/100))**2
+        #     e**(8/100)  = (e**(4/100))**2
+        #     e**(16/100) = (e**(8/100))**2
+        #     e**(20/100) = e**(16/100) * e**(4/100)
+        #     new_target = old_target * e**(20/100)
+        # This saving gets significant for large numbers (log vs linear): if the blocks were 1,000,000 segments apart, this would mean 26 multiplications rather than 1,000,000.
         for _ in range(old_segment_number, new_segment_number):
             new_target = (new_target << FACTOR_SCALING_BITS) // TIME_SEGMENT_DIFFICULTY_DECREASE_FACTOR[granularity]
     elif new_segment_number < old_segment_number:                       # If the new block's timestamp is weirdly before the old one's, OK then, *increase* difficulty accordingly
