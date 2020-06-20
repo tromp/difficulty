@@ -414,31 +414,30 @@ def next_bits_ema_int_approx(msg, window):
     new_target = old_target * window // (window + IDEAL_BLOCK_TIME - block_time)                        # Simplifies the corresponding line above via this approx: for 0 <= x << 1, 1-e**(-x) =~ x
     return target_to_bits(new_target)
 
-def exp_int_approx(x, decimals=9):
-    """Approximates e**(x / 10**decimals) using integer math, returning the answer scaled by the same number of dec places as the input.  Eg:
-    exp_int_approx(1000000, 6) ->  2718281 (e**1 = 2.718281)
-    exp_int_approx(3000, 3)    -> 20085    (e**3 = 20.085)
-    exp_int_approx(500, 3)     ->  1648    (e**0.5 = 1.648)"""
+def exp_int_approx(x, bits_precision=20):
+    """Approximates e**(x / 2**bits_precision) using integer math, returning the answer scaled by the same number of bits as the input.  Eg:
+    exp_int_approx(1024,   10) ->    2783       (1024/2**10 = 1; e**1 = 2.718281 =~ 2783/2**10)
+    exp_int_approx(3072,   10) ->   20567       (3072/2**10 = 3; e**3 = 20.0855 =~ 20567/2**10)
+    exp_int_approx(524288, 20) -> 1728809       (524288/2**20 = 0.5; e**0.5 = 1.6487 =~ 1728809/2**20)"""
     assert type(x) is int, str(type(x))                                             # If we pass in a non-int, something has gone wrong
 
-    scaling, scaling_2 = 10**decimals, 10**(2*decimals)
-    h = max(0, int.bit_length(x) - int.bit_length(scaling) + 4)                     # h = the number of times we halve x before using our fancy approximation
-    term1, term2 = 3 * scaling << h, 3 * scaling_2 << (2*h)                         # Terms from the hairy but accurate approximation we're using - see https://math.stackexchange.com/a/56064
-    hth_square_root_of_e_x = scaling_2 * ((x + term1)**2 + term2) // ((x - term1)**2 + term2)
+    h = max(0, int.bit_length(x) - bits_precision + 3)                              # h = the number of times we halve x before using our fancy approximation
+    term1, term2 = 3 << (bits_precision + h), 3 << (2 * (bits_precision + h))       # Terms from the hairy but accurate approximation we're using - see https://math.stackexchange.com/a/56064
+    hth_square_root_of_e_x = (((x + term1)**2 + term2) << (2 * bits_precision)) // ((x - term1)**2 + term2)
 
     e_x = hth_square_root_of_e_x                                                    # Now just need to square hth_square_root_of_e_x h times, while repeatedly dividing out our scaling factor
     for i in range(h):
-        e_x = e_x**2 // scaling_2
-    return e_x // scaling                                                           # And finally, we still have one extra scaling factor to divide out.
+        e_x = e_x**2 >> (2 * bits_precision)
+    return e_x >> bits_precision                                                    # And finally, we still have one extra scaling factor to divide out.
 
 def next_bits_ema_int_approx2(msg, window):
     # An integer-math version of next_bits_ema2() above, trying to retain the correct exponential behavior for very long block times.
     max_prev_timestamp = max(state.timestamp for state in states[-100:-1])
     block_time = max(min(IDEAL_BLOCK_TIME, window) // 100, states[-1].timestamp - max_prev_timestamp)
     old_target = bits_to_target(states[-1].bits)
-    decimals = 9
-    scaling = 10**decimals
-    new_target = scaling**2 * old_target // (scaling**2 - (exp_int_approx(scaling * -block_time // window, decimals) - scaling) * (scaling * IDEAL_BLOCK_TIME // block_time - scaling))
+    bits_precision = 20
+    scaling = 1 << bits_precision
+    new_target = scaling**2 * old_target // (scaling**2 - (exp_int_approx(scaling * -block_time // window, bits_precision) - scaling) * (scaling * IDEAL_BLOCK_TIME // block_time - scaling))
     return target_to_bits(new_target)
 
 def next_bits_simple_exponential(msg, window):
@@ -454,9 +453,9 @@ def next_bits_simple_exponential_int_approx(msg, window):
     # An integer-math version of next_bits_simple_exponential() above.
     block_time = states[-1].timestamp - states[-2].timestamp
     old_target = bits_to_target(states[-1].bits)
-    decimals = 9
-    scaling = 10**decimals
-    new_target = exp_int_approx(scaling * (block_time - IDEAL_BLOCK_TIME) // window, decimals) * old_target // scaling
+    bits_precision = 20
+    scaling = 1 << bits_precision
+    new_target = exp_int_approx(scaling * (block_time - IDEAL_BLOCK_TIME) // window, bits_precision) * old_target // scaling
     return target_to_bits(new_target)
 
 def block_time(mean_time):
