@@ -89,13 +89,21 @@ default_params = {
 }
 IDEAL_BLOCK_TIME = 10 * 60
 
+FACTOR_SCALING_BITS = 32
+# These factors are scaled by 2**FACTOR_SCALING_BITS.  Eg, (x * 4252231657) >> 32, is approximately x * e^(-1/100).
+TIME_SEGMENT_DIFFICULTY_DECREASE_FACTOR = {
+    100: 4252231657,                    # If current block's timestamp is one segment later than previous block's, then multiply difficulty by this number and divide by 2**32.
+}
+BLOCK_DIFFICULTY_INCREASE_FACTOR = {
+    144: 4324897261,                    # If window = 144 * IDEAL_BLOCK_TIME, then every time a block is found, multiply difficulty by this number and divide by 2**32.
+}
+
 
 State = namedtuple('State', 'height wall_time timestamp bits chainwork fx '
                    'hashrate rev_ratio var_frac memory_frac greedy_frac msg')
 
 states = []
 lock = Lock() # hack to deal with concurrency and global use of states
-
 
 
 def print_headers():
@@ -317,6 +325,41 @@ def next_bits_asert(msg, tau):
     orig_target = bits_to_target(states[-0].bits)
     next_target = int(orig_target * math.e**((blocks_time - IDEAL_BLOCK_TIME*(height_diff+1)) / tau))
     return target_to_bits(next_target)
+
+def next_bits_asert_discrete(msg, window, granularity):
+    """Another exponential-decay-based algo that uses integer math instead of exponentiation.  As with asert, we increase difficulty by a fixed amount each time a block is found,
+    and decrease it steadily for the passage of time between found blocks.  But here both adjustments are done in integer math, using the principles that:
+    1. We can discretize "Decrease difficulty steadily by a factor of 1/e over (say) 1 day", into "Decrease difficulty by exactly 1/e^(1/100) for each 1/100 of a day."
+    2. We can closely approximate "difficulty * 1/e^(1/100)", by "(difficulty * 4252231657) >> 32".  (Really, just "difficulty * 99 // 100" would probably do the job too.)
+
+    The "window" param is meant to invoke the fixed time window of a simple moving average, but here we give it the standard equivalent EMA interpretation: the window is "how old a
+    block has to be (in seconds) for us to discount its weight by a factor of e."  So, instead of 86400 (1 day) meaning "average the block times over the last day," here it means 
+    "in our weighted avg of block times, give a day-old block 1/e the weight of the latest block."  This results in comparable responsiveness to a fixed 1-day window.
+
+    Given this framework, we update the target as follows:
+    1. Decrease the difficulty (ie, increase the target) by the constant factor we always increase it by for each new block.  (See the ASERT algo for an explanation of this.)
+    2. Adjust the difficulty based on the passage of time (typically increase it, except in the unusual case where this block's timestamp is before the previous block's):
+       a) Specify a granularity - the number of segments we'll divide the time window into.  Eg, window = 86400 and granularity = 100, means segment = 864.
+       b) Figure out which numbered segment (since genesis) the previous block's timestamp fell into, and which segment the current block falls into.
+       c) The difference between the segment numbers of the two blocks tells us how many discrete "per-segment difficulty adjustments" we need to make.  Eg, if the current block
+          lands in the segment 3 segments after the one the previous block did, we need to decrease difficulty by three "segment adjustments".
+       d) Theoretically, if granularity = 100, we should multiply difficulty by e**(-1/100) for each segment.  We can approximate each adjustment by an int-math multiplication, 
+          using the e^(-1/100)*(2**32) in TIME_SEGMENT_DIFFICULTY_DECREASE_FACTOR above.  This means our algo can only time-adjust difficulty by multiples of 1% - but that's OK."""
+
+    old_segment_number = states[-2].timestamp // (window // granularity)
+    new_segment_number = states[-1].timestamp // (window // granularity)
+    old_target = bits_to_target(states[-1].bits)
+
+    # We divide by the factors here, rather than multiply, because we're actually adjusting target, not difficulty:
+    new_target = (old_target << FACTOR_SCALING_BITS) // BLOCK_DIFFICULTY_INCREASE_FACTOR[window // IDEAL_BLOCK_TIME]
+    if new_segment_number > old_segment_number:
+        for _ in range(old_segment_number, new_segment_number):
+            new_target = (new_target << FACTOR_SCALING_BITS) // TIME_SEGMENT_DIFFICULTY_DECREASE_FACTOR[granularity]
+    elif new_segment_number < old_segment_number:                       # If the new block's timestamp is weirdly before the old one's, OK then, *increase* difficulty accordingly
+        for _ in range(new_segment_number, old_segment_number):
+            new_target = (new_target * TIME_SEGMENT_DIFFICULTY_DECREASE_FACTOR[granularity]) >> FACTOR_SCALING_BITS
+
+    return target_to_bits(new_target)
 
 def next_bits_lwma(msg, n):
     block_intervals = [states[-(1+i)].timestamp - states[-(2+i)].timestamp for i in range(n)]
@@ -694,6 +737,10 @@ Algos = {
     'asert-2304' : Algo(next_bits_asert, {
         'tau': (IDEAL_BLOCK_TIME * 2304),
     }),
+    'asertd-144' : Algo(next_bits_asert_discrete, {
+        'window': (IDEAL_BLOCK_TIME * 144),
+        'granularity': 100,
+    }),
     'wtema-072' : Algo(next_bits_wtema, {
         'alpha_recip': 72, # floor(1/(1 - pow(.5, 1.0/72))), # half-life = 72
     }),
@@ -754,9 +801,9 @@ def run_one_simul(print_it, returnstate=False, params=default_params):
 
         # Drop the prefix blocks to be left with the simulation blocks
         simul = states[N:]
-    except err:
+    except:
         lock.release()
-        raise err
+        raise
     lock.release()
 
     if returnstate:
