@@ -89,16 +89,6 @@ default_params = {
 }
 IDEAL_BLOCK_TIME = 10 * 60
 
-FACTOR_SCALING_BITS = 32
-# These factors are scaled by 2**FACTOR_SCALING_BITS.  Eg, (x * 4252231657) >> 32, is approximately x * e^(-1/100).
-TIME_SEGMENT_DIFFICULTY_DECREASE_FACTOR = {
-    100: 4252231657,                    # If current block's timestamp is one segment later than previous block's, then multiply difficulty by this number and divide by 2**32.
-}
-BLOCK_DIFFICULTY_INCREASE_FACTOR = {
-    144: 4324897261,                    # If window = 144 * IDEAL_BLOCK_TIME, then every time a block is found, multiply difficulty by this number and divide by 2**32.
-}
-
-
 State = namedtuple('State', 'height wall_time timestamp bits chainwork fx '
                    'hashrate rev_ratio var_frac memory_frac greedy_frac msg')
 
@@ -345,6 +335,15 @@ def next_bits_asert_discrete(msg, window, granularity):
           lands in the segment 3 segments after the one the previous block did, we need to decrease difficulty by three "segment adjustments".
        d) Theoretically, if granularity = 100, we should multiply difficulty by e**(-1/100) for each segment.  We can approximate each adjustment by an int-math multiplication, 
           using the e^(-1/100)*(2**32) in TIME_SEGMENT_DIFFICULTY_DECREASE_FACTOR above.  This means our algo can only time-adjust difficulty by multiples of 1% - but that's OK."""
+
+    FACTOR_SCALING_BITS = 32
+    # These factors are scaled by 2**FACTOR_SCALING_BITS.  Eg, (x * 4252231657) >> 32, is approximately x * e^(-1/100).
+    TIME_SEGMENT_DIFFICULTY_DECREASE_FACTOR = {
+        100: 4252231657,                    # If current block's timestamp is one segment later than previous block's, then multiply difficulty by this number and divide by 2**32.
+    }
+    BLOCK_DIFFICULTY_INCREASE_FACTOR = {
+        144: 4324897261,                    # If window = 144 * IDEAL_BLOCK_TIME, then every time a block is found, multiply difficulty by this number and divide by 2**32.
+    }
 
     old_segment_number = states[-2].timestamp // (window // granularity)
     new_segment_number = states[-1].timestamp // (window // granularity)
@@ -811,11 +810,17 @@ Algos = {
     'aserti1-288' : Algo(next_bits_aserti1, {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 288),
     }),
+    'aserti1-576' : Algo(next_bits_aserti1, {
+        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 576),
+    }),
     'aserti2-144' : Algo(next_bits_aserti2, {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 144),
     }),
     'aserti2-288' : Algo(next_bits_aserti2, {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 288),
+    }),
+    'aserti2-576' : Algo(next_bits_aserti2, {
+        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 576),
     }),
     'aserti3-144' : Algo(next_bits_aserti3, {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 144),
@@ -825,6 +830,9 @@ Algos = {
     }),
     'aserti3-288' : Algo(next_bits_aserti3, {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 288),
+    }),
+    'aserti3-576' : Algo(next_bits_aserti3, {
+        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 576),
     }),
     'wtema-072' : Algo(next_bits_wtema, {
         'alpha_recip': 72, # floor(1/(1 - pow(.5, 1.0/72))), # half-life = 72
