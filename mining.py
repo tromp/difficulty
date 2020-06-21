@@ -370,7 +370,7 @@ def next_bits_asert_discrete(msg, window, granularity):
 
     return target_to_bits(new_target)
 
-def next_bits_aserti1(msg, tau):
+def next_bits_aserti(msg, tau, mode=1):
     rbits = 16      # number of bits after the radix for fixed-point math
     radix = 1<<rbits
     blocks_time = states[-1].timestamp - states[0].timestamp
@@ -378,50 +378,20 @@ def next_bits_aserti1(msg, tau):
     exponent = ((blocks_time - IDEAL_BLOCK_TIME*(height_diff+1)) * radix) // tau
     target = bits_to_target(states[-0].bits)
 
-    shifts = exponent // radix
+    shifts = exponent >> rbits
     if shifts < 0:
         target >>= -shifts
     else:
         target <<= shifts
     exponent -= shifts*radix
-    target += target * exponent // radix
-    return target_to_bits(target)
 
-def next_bits_aserti2(msg, tau):
-    rbits = 16      # number of bits after the radix for fixed-point math
-    radix = 1<<rbits
-    blocks_time = states[-1].timestamp - states[0].timestamp
-    height_diff = states[-1].height - states[0].height
-    exponent = ((blocks_time - IDEAL_BLOCK_TIME*(height_diff+1)) * radix) // tau
-    target = bits_to_target(states[-0].bits)
-
-    shifts = exponent // radix
-    if shifts < 0:
-        target >>= -shifts
-    else:
-        target <<= shifts
-    exponent -= shifts*radix
-    target = target + target * 2*exponent // (radix*3) + target*exponent*exponent // (radix*radix*3)
-    return target_to_bits(target)
-
-
-def next_bits_aserti3(msg, tau):
-    rbits = 16      # number of bits after the radix for fixed-point math
-    radix = 1<<rbits
-    blocks_time = states[-1].timestamp - states[0].timestamp
-    height_diff = states[-1].height - states[0].height
-    exponent = ((blocks_time - IDEAL_BLOCK_TIME*(height_diff+1)) * radix) // tau
-    target = bits_to_target(states[-0].bits)
-    orig_target = target
-    shifts = exponent // radix
-    if shifts < 0:
-        target >>= -shifts
-    else:
-        target <<= shifts
-    exponent -= shifts*radix
-    factor = (195766423245049*exponent + 971821376*exponent**2 + 5127*exponent**3 + 2**47)>>(rbits*3)
-
-    target += (target * factor) >> rbits
+    if mode == 1:
+        target += target * exponent // radix
+    elif mode == 2:
+        target += target * 2*exponent // (radix*3) + target*exponent*exponent // (radix*radix*3)
+    elif mode == 3:
+        factor = (195766423245049*exponent + 971821376*exponent**2 + 5127*exponent**3 + 2**47)>>(rbits*3)
+        target += (target * factor) >> rbits
     return target_to_bits(target)
 
 def next_bits_lwma(msg, n):
@@ -804,35 +774,45 @@ Algos = {
         'window': (IDEAL_BLOCK_TIME * 144),
         'granularity': 100,
     }),
-    'aserti1-144' : Algo(next_bits_aserti1, {
+    'aserti1-144' : Algo(next_bits_aserti, {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 144),
+        'mode': 1,
     }),
-    'aserti1-288' : Algo(next_bits_aserti1, {
+    'aserti1-288' : Algo(next_bits_aserti, {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 288),
+        'mode': 1,
     }),
-    'aserti1-576' : Algo(next_bits_aserti1, {
+    'aserti1-576' : Algo(next_bits_aserti, {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 576),
+        'mode': 1,
     }),
-    'aserti2-144' : Algo(next_bits_aserti2, {
+    'aserti2-144' : Algo(next_bits_aserti, {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 144),
+        'mode': 2,
     }),
-    'aserti2-288' : Algo(next_bits_aserti2, {
+    'aserti2-288' : Algo(next_bits_aserti, {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 288),
+        'mode': 2,
     }),
-    'aserti2-576' : Algo(next_bits_aserti2, {
+    'aserti2-576' : Algo(next_bits_aserti, {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 576),
+        'mode': 2,
     }),
-    'aserti3-144' : Algo(next_bits_aserti3, {
+    'aserti3-144' : Algo(next_bits_aserti, {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 144),
+        'mode': 3,
     }),
-    'aserti3-200' : Algo(next_bits_aserti3, {
+    'aserti3-200' : Algo(next_bits_aserti, {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 200),
+        'mode': 3,
     }),
-    'aserti3-288' : Algo(next_bits_aserti3, {
+    'aserti3-288' : Algo(next_bits_aserti, {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 288),
+        'mode': 3,
     }),
-    'aserti3-576' : Algo(next_bits_aserti3, {
+    'aserti3-576' : Algo(next_bits_aserti, {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 576),
+        'mode': 3,
     }),
     'wtema-072' : Algo(next_bits_wtema, {
         'alpha_recip': 72, # floor(1/(1 - pow(.5, 1.0/72))), # half-life = 72
