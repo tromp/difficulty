@@ -375,21 +375,34 @@ def next_bits_aserti(msg, tau, mode=1):
     radix = 1<<rbits
     blocks_time = states[-1].timestamp - states[0].timestamp
     height_diff = states[-1].height - states[0].height
-    exponent = ((blocks_time - IDEAL_BLOCK_TIME*(height_diff+1)) * radix) // tau
     target = bits_to_target(states[-0].bits)
 
+    # Ultimately, we want to approximate the following ASERT formula, using only integer (fixed-point) math:
+    #     new_target = old_target * 2^((blocks_time - IDEAL_BLOCK_TIME*(height_diff+1)) / tau)
+
+    # First, we'll calculate the exponent:
+    exponent = ((blocks_time - IDEAL_BLOCK_TIME*(height_diff+1)) * radix) // tau
+
+    # Next, we use the 2^x = 2 * 2(x-1) identity to shift our exponent into the (0, 1] interval.
+    # First, the truncated exponent tells us how many shifts we need to do
     shifts = exponent >> rbits
+
+    # Next, we shift. Python doesn't allow shifting by negative integers, so:
     if shifts < 0:
         target >>= -shifts
     else:
         target <<= shifts
     exponent -= shifts*radix
 
+    # Now we compute an approximated target * 2^(exponent)
     if mode == 1:
-        target += target * exponent // radix
+        # target * 2^x ~= target * (1 + x)
+        target += (target * exponent) >> rbits
     elif mode == 2:
-        target += target * 2*exponent // (radix*3) + target*exponent*exponent // (radix*radix*3)
+        # target * 2^x ~= target * (1 + 2*x/3 + x**2/3)
+        target += (target * 2*exponent*radix//3 + target*exponent*exponent //3) >> (rbits*2)
     elif mode == 3:
+        # target * 2^x ~= target * (1 + 0.695502049*x + 0.2262698*x**2 + 0.0782318*x**3)
         factor = (195766423245049*exponent + 971821376*exponent**2 + 5127*exponent**3 + 2**47)>>(rbits*3)
         target += (target * factor) >> rbits
     return target_to_bits(target)
