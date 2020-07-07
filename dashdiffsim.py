@@ -137,10 +137,10 @@ if __name__ == "__main__":
             id='revratio-graph',
             figure={},
         ),        
-        dcc.Graph(
-            id='intervals-graph',
-            figure={},
-        ),        
+        # dcc.Graph(
+        #     id='intervals-graph',
+        #     figure={},
+        # ),
         dcc.Graph(
             id='conftimes-graph',
             figure={},
@@ -337,8 +337,8 @@ if __name__ == "__main__":
         return {'data': datalist,
                'layout': {'title': "Revenue ratio", 'xaxis': {'title':'Block height'}, 'yaxis': {'title':"BCH/BTC revenue ratio"}}}
 
-    @app.callback(Output(component_id='intervals-graph', component_property='figure'),
-                  [Input(component_id='results_of_run', component_property='children')])
+    # @app.callback(Output(component_id='intervals-graph', component_property='figure'),
+    #               [Input(component_id='results_of_run', component_property='children')])
     def update_interval_histogram(pickled_results):
         dfs = json.loads(pickled_results)
         datalist = []
