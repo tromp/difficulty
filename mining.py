@@ -553,10 +553,10 @@ def block_time(mean_time):
     lmbda = 1 / mean_time
     return math.log(1 - sample) / -lmbda
 
-def next_fx_random(r):
+def next_fx_random(r, **params):
     return states[-1].fx * (1.0 + (r - 0.5) / 200)
 
-def next_fx_ramp(r):
+def next_fx_ramp(r, **params):
     return states[-1].fx * 1.00017149454
 
 def next_hashrate(states, scenario, params):
@@ -566,11 +566,21 @@ def next_hashrate(states, scenario, params):
     N = params['VARIABLE_WINDOW']
     mean_rev_ratio = sum(state.rev_ratio for state in states[-N:]) / N
 
-
-    
-    var_fraction = (high - mean_rev_ratio**params['VARIABLE_EXPONENT']) * scale_fac
-    memory_frac = states[-1].memory_frac +  ((var_fraction-.5) * params['MEMORY_GAIN'])
-    var_fraction = max(0, min(1, var_fraction + memory_frac))
+    if 1:
+        var_fraction = (high - mean_rev_ratio**params['VARIABLE_EXPONENT']) * scale_fac
+        memory_frac = states[-1].memory_frac +  ((var_fraction-.5) * params['MEMORY_GAIN'])
+        var_fraction = max(0, min(1, var_fraction + memory_frac))
+    else:
+        var_fraction = (high - mean_rev_ratio**params['VARIABLE_EXPONENT']) * scale_fac
+        memory_frac  = states[-1].memory_frac * 2**(1*(1-mean_rev_ratio))
+        if var_fraction > 0 and memory_frac <= 0:
+            memory_frac = var_fraction
+        var_fraction = ((1-mean_rev_ratio**params['VARIABLE_EXPONENT'])*4 + states[-1].memory_frac)
+        a = 0.2
+        memory_frac = (1-a) * states[-1].memory_frac + a * var_fraction
+        var_fraction = 2**(var_fraction*20)
+        memory_frac = max(-20, min(0, memory_frac))
+        var_fraction = max(0, min(1, var_fraction))
     
 
     if ((scenario.pump_144_threshold > 0) and
@@ -841,7 +851,7 @@ Algos = {
     })
 }
 
-Scenario = namedtuple('Scenario', 'next_fx params, dr_hashrate, pump_144_threshold')
+Scenario = namedtuple('Scenario', 'next_fx, params, dr_hashrate, pump_144_threshold')
 
 Scenarios = {
     'default' : Scenario(next_fx_random, {}, 0, 0),
@@ -852,6 +862,7 @@ Scenarios = {
     'dr100' : Scenario(next_fx_random, {}, 100, 0),
     'pump-osc' : Scenario(next_fx_ramp, {}, 0, 8000),
     'ft100' : Scenario(next_fx_random, {}, -100, 0),
+    'price10x' : Scenario(next_fx_random, {"price10x":True}, 0, 0),
 }
 
 def run_one_simul(print_it, returnstate=False, params=default_params):
@@ -872,9 +883,15 @@ def run_one_simul(print_it, returnstate=False, params=default_params):
         # see how algos recalibrate
         fx_jumps = {}
         num_fx_jumps = 2 + params['num_blocks']/3000
-        factor_choices = [0.85, 0.9, 1.1, 1.15]
-        for n in range(10):
-            fx_jumps[random.randrange(params['num_blocks'])] = random.choice(factor_choices)
+
+        if 'price10x' in params['scenario'].params:
+            factor_choices = [0.1, 0.25, 0.5, 2.0, 4.0, 10.0]
+            for n in range(4):
+                fx_jumps[random.randrange(params['num_blocks'])] = random.choice(factor_choices)
+        else:
+            factor_choices = [0.85, 0.9, 1.1, 1.15]
+            for n in range(10):
+                fx_jumps[random.randrange(params['num_blocks'])] = random.choice(factor_choices)
 
         # Run the simulation
         if print_it:
