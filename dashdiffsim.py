@@ -442,7 +442,7 @@ if __name__ == "__main__":
       if len(dfs[0]['rev_ratios']) < 20000:
         elements.append(html.H6("Warning: These numbers are inaccurate for shorter simulations. It is recommended to simulate at least 20,000 blocks if you are interested in these statistics."))
      
-      rows = [html.Tr([html.Th("Algorithm"), html.Th("Greedy"), html.Th("Variable"), html.Th("Steady")])]
+      rows = [html.Tr([html.Th("Algorithm"), html.Th("Greedy"), html.Th("Variable"), html.Th("Steady"), html.Th("Advantage")])]
       for df in dfs:
         IBT = mining.IDEAL_BLOCK_TIME
         tsdiffs = [df['wall_times'][i+1] - df['wall_times'][i] for i in range(len(df['wall_times'])-1)]
@@ -451,10 +451,13 @@ if __name__ == "__main__":
         greedy_profits = sum([ts/IBT*((1-greedy_frac) + (greedy_frac*rev_ratio)) for greedy_frac, rev_ratio, ts in zip(df['greedy_fracs'], df['rev_ratios'], tsdiffs)])/len(df['greedy_fracs']) / timecorrection
         var_profits    = sum([ts/IBT*((1-var_frac)    + (var_frac   *rev_ratio)) for var_frac,    rev_ratio, ts in zip(df['var_fracs'],    df['rev_ratios'], tsdiffs)])/len(df['var_fracs']) / timecorrection
         steady_profits = sum([ts/IBT*rev_ratio for rev_ratio, ts in zip(df['rev_ratios'], tsdiffs)])/len(df['rev_ratios']) / timecorrection
+        best  = max(steady_profits, var_profits, greedy_profits)
+        worst = min(steady_profits, var_profits, greedy_profits)
         rows.append(html.Tr([html.Td(df['name']), 
           html.Td("%5.3f%%"%(100*greedy_profits-100)), 
           html.Td("%5.3f%%"%(100*var_profits-100)), 
-          html.Td("%5.3f%%"%(100*steady_profits-100))]))
+          html.Td("%5.3f%%"%(100*steady_profits-100)),
+          html.Td("%5.3f%%"%(100*(best-worst)))]))
 
       elements.append(html.Table(rows))
       return elements
