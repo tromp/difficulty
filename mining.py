@@ -679,6 +679,12 @@ Algos = {
     'cw-144' : Algo(next_bits_cw, {
         'block_count': 144,
     }),
+    'cw-288' : Algo(next_bits_cw, {
+        'block_count': 288,
+    }),
+    'cw-576' : Algo(next_bits_cw, {
+        'block_count': 576,
+    }),
     'cw-sha-16' : Algo(next_bits_sha, {}),
     'cw-180' : Algo(next_bits_cw, {
         'block_count': 180,
@@ -763,6 +769,9 @@ Algos = {
     'asert-144' : Algo(next_bits_asert, {
         'tau': (IDEAL_BLOCK_TIME * 144),
     }),
+    'asert-208' : Algo(next_bits_asert, {
+        'tau': (IDEAL_BLOCK_TIME * 208),
+    }),
     'asert-288' : Algo(next_bits_asert, {
         'tau': (IDEAL_BLOCK_TIME * 288),
     }),
@@ -829,8 +838,16 @@ Algos = {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 200),
         'mode': 3,
     }),
+    'aserti3-208' : Algo(next_bits_aserti, {
+        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 208),
+        'mode': 3,
+    }),
     'aserti3-288' : Algo(next_bits_aserti, {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 288),
+        'mode': 3,
+    }),
+    'aserti3-416' : Algo(next_bits_aserti, {
+        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 416),
         'mode': 3,
     }),
     'aserti3-576' : Algo(next_bits_aserti, {
