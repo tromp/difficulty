@@ -313,7 +313,7 @@ def next_bits_asert(msg, tau):
     blocks_time = states[-1].timestamp - states[0].timestamp
     height_diff = states[-1].height - states[0].height
     orig_target = bits_to_target(states[-0].bits)
-    next_target = int(orig_target * math.e**((blocks_time - IDEAL_BLOCK_TIME*(height_diff+1)) / tau))
+    next_target = int(orig_target * math.e**((blocks_time - IDEAL_BLOCK_TIME*height_diff) / tau))
     return target_to_bits(next_target)
 
 def next_bits_asert_discrete(msg, window, granularity):
@@ -381,7 +381,7 @@ def next_bits_aserti(msg, tau, mode=1):
     #     new_target = old_target * 2^((blocks_time - IDEAL_BLOCK_TIME*(height_diff+1)) / tau)
 
     # First, we'll calculate the exponent:
-    exponent = ((blocks_time - IDEAL_BLOCK_TIME*(height_diff+1)) * radix) // tau
+    exponent = ((blocks_time - IDEAL_BLOCK_TIME*height_diff) * radix) // tau
 
     # Next, we use the 2^x = 2 * 2(x-1) identity to shift our exponent into the (0, 1] interval.
     # First, the truncated exponent tells us how many shifts we need to do
