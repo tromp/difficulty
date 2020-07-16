@@ -164,7 +164,7 @@ def next_bits_k(msg, mtp_window, high_barrier, target_raise_frac,
     return target_to_bits(target)
 
 def suitable_block_index(index):
-    assert index >= 3
+    assert index >= 2
     indices = [index - 2, index - 1, index]
 
     if states[indices[0]].timestamp > states[indices[2]].timestamp:
@@ -285,7 +285,7 @@ def next_bits_wt_compare(msg, block_count):
         assert(next_bits == next_bits_py)
     return next_bits
 
-def next_bits_wtema(msg, alpha_recip):
+def next_bits_wtema(msg, alpha_recip, mo3=0):
     # This algorithm is weighted-target exponential moving average.
     # Target is calculated based on inter-block times weighted by a
     # progressively decreasing factor for past inter-block times,
@@ -303,8 +303,19 @@ def next_bits_wtema(msg, alpha_recip):
     #if states[-1].height % 2000 == 0:
     #    return next_bits_cw(msg, 2000)
 
-    block_time = states[-1].timestamp - states[-2].timestamp
-    prior_target = bits_to_target(states[-1].bits)
+    if mo3:
+        last = suitable_block_index(len(states) - 1)
+        first = suitable_block_index(len(states) - 2)
+    else:
+        last = -1
+        first = -2
+    if mo3==2:
+        # This version results in nasty 2-block oscillations
+        prior_target = bits_to_target(states[last].bits)
+    else:
+        prior_target = bits_to_target(states[-1].bits)
+
+    block_time = states[last].timestamp - states[first].timestamp
     next_target = prior_target // (IDEAL_BLOCK_TIME * alpha_recip)
     next_target *= block_time + IDEAL_BLOCK_TIME * (alpha_recip - 1)
     return target_to_bits(next_target)
@@ -370,11 +381,18 @@ def next_bits_asert_discrete(msg, window, granularity):
 
     return target_to_bits(new_target)
 
-def next_bits_aserti(msg, tau, mode=1):
+def next_bits_aserti(msg, tau, mode=1, mo3=False):
     rbits = 16      # number of bits after the radix for fixed-point math
     radix = 1<<rbits
-    blocks_time = states[-1].timestamp - states[0].timestamp
-    height_diff = states[-1].height - states[0].height
+    if mo3:
+        last = suitable_block_index(len(states) - 1)
+        first = suitable_block_index(2)
+    else:
+        last = len(states)-1
+        first = 0
+
+    blocks_time = states[last].timestamp - states[first].timestamp
+    height_diff = states[last].height    - states[first].height
     target = bits_to_target(states[-0].bits)
 
     # Ultimately, we want to approximate the following ASERT formula, using only integer (fixed-point) math:
@@ -383,7 +401,7 @@ def next_bits_aserti(msg, tau, mode=1):
     # First, we'll calculate the exponent:
     exponent = ((blocks_time - IDEAL_BLOCK_TIME*height_diff) * radix) // tau
 
-    # Next, we use the 2^x = 2 * 2(x-1) identity to shift our exponent into the (0, 1] interval.
+    # Next, we use the 2^x = 2 * 2^(x-1) identity to shift our exponent into the (0, 1] interval.
     # First, the truncated exponent tells us how many shifts we need to do
     shifts = exponent >> rbits
 
@@ -555,6 +573,9 @@ def block_time(mean_time):
 
 def next_fx_random(r, **params):
     return states[-1].fx * (1.0 + (r - 0.5) / 200)
+
+def next_fx_constant(r, **params):
+    return states[-1].fx
 
 def next_fx_ramp(r, **params):
     return states[-1].fx * 1.00017149454
@@ -830,6 +851,10 @@ Algos = {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 576),
         'mode': 2,
     }),
+    'aserti3-072' : Algo(next_bits_aserti, {
+        'tau': int(math.log(2) * IDEAL_BLOCK_TIME *  72),
+        'mode': 3,
+    }),
     'aserti3-144' : Algo(next_bits_aserti, {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 144),
         'mode': 3,
@@ -854,6 +879,34 @@ Algos = {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 576),
         'mode': 3,
     }),
+    'aserti3-mo3-072' : Algo(next_bits_aserti, {
+        'tau': int(math.log(2) * IDEAL_BLOCK_TIME *  72),
+        'mode': 3, 'mo3':True,
+    }),
+    'aserti3-mo3-144' : Algo(next_bits_aserti, {
+        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 144),
+        'mode': 3, 'mo3':True,
+    }),
+    'aserti3-mo3-200' : Algo(next_bits_aserti, {
+        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 200),
+        'mode': 3, 'mo3':True,
+    }),
+    'aserti3-mo3-208' : Algo(next_bits_aserti, {
+        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 208),
+        'mode': 3, 'mo3':True,
+    }),
+    'aserti3-mo3-288' : Algo(next_bits_aserti, {
+        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 288),
+        'mode': 3, 'mo3':True,
+    }),
+    'aserti3-mo3-416' : Algo(next_bits_aserti, {
+        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 416),
+        'mode': 3, 'mo3':True,
+    }),
+    'aserti3-mo3-576' : Algo(next_bits_aserti, {
+        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 576),
+        'mode': 3, 'mo3':True,
+    }),
     'wtema-072' : Algo(next_bits_wtema, {
         'alpha_recip': 72, # floor(1/(1 - pow(.5, 1.0/72))), # half-life = 72
     }),
@@ -865,6 +918,21 @@ Algos = {
     }),
     'wtema-576' : Algo(next_bits_wtema, {
         'alpha_recip': 576,
+    }),
+    'wtema-mo3-072' : Algo(next_bits_wtema, {
+        'alpha_recip': 72, 'mo3':1,
+    }),
+    'wtema-mo3-144' : Algo(next_bits_wtema, {
+        'alpha_recip': 144, 'mo3':1,
+    }),
+    'wtema-mo3-288' : Algo(next_bits_wtema, {
+        'alpha_recip': 288, 'mo3':1,
+    }),
+    'wtema-mo3-576' : Algo(next_bits_wtema, {
+        'alpha_recip': 576, 'mo3':1,
+    }),
+    'wtema-mo3bad-576' : Algo(next_bits_wtema, {
+        'alpha_recip': 576, 'mo3':2,
     })
 }
 
@@ -872,12 +940,14 @@ Scenario = namedtuple('Scenario', 'next_fx, params, dr_hashrate, pump_144_thresh
 
 Scenarios = {
     'default' : Scenario(next_fx_random, {}, 0, 0),
+    'stable' : Scenario(next_fx_constant, {"price1x":True}, 0, 0),
     'fxramp' : Scenario(next_fx_ramp, {}, 0, 0),
     # Difficulty rampers with given PH/s
     'dr50' : Scenario(next_fx_random, {}, 50, 0),
     'dr75' : Scenario(next_fx_random, {}, 75, 0),
     'dr100' : Scenario(next_fx_random, {}, 100, 0),
     'pump-osc' : Scenario(next_fx_ramp, {}, 0, 8000),
+    'ft50' : Scenario(next_fx_random, {}, -50, 0),
     'ft100' : Scenario(next_fx_random, {}, -100, 0),
     'price10x' : Scenario(next_fx_random, {"price10x":True}, 0, 0),
 }
@@ -905,7 +975,7 @@ def run_one_simul(print_it, returnstate=False, params=default_params):
             factor_choices = [0.1, 0.25, 0.5, 2.0, 4.0, 10.0]
             for n in range(4):
                 fx_jumps[random.randrange(params['num_blocks'])] = random.choice(factor_choices)
-        else:
+        elif not 'price1x' in params['scenario'].params:
             factor_choices = [0.85, 0.9, 1.1, 1.15]
             for n in range(10):
                 fx_jumps[random.randrange(params['num_blocks'])] = random.choice(factor_choices)
