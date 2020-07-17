@@ -565,11 +565,17 @@ def next_bits_simple_exponential_int_approx(msg, window):
     new_target = exp_int_approx(scaling * (block_time - IDEAL_BLOCK_TIME) // window, bits_precision) * old_target // scaling
     return target_to_bits(new_target)
 
-def block_time(mean_time):
-    # Sample the exponential distn
-    sample = random.random()
-    lmbda = 1 / mean_time
-    return math.log(1 - sample) / -lmbda
+def block_time(mean_time, **params):
+    if 'deterministic' in params:
+        return mean_time
+
+    k = params['bobtail'] if 'bobtail' in params else 1
+    if k==1:
+        # gammavariate treats random seeds slightly differently from expovariate or random.random(),
+        # so we use expovariate when continuity of test results might matter
+        return random.expovariate(1/mean_time)
+    return mean_time*random.gammavariate(k, 1/k)
+
 
 def next_fx_random(r, **params):
     return states[-1].fx * (1.0 + (r - 0.5) / 200)
@@ -646,7 +652,7 @@ def next_step(fx_jump_factor, params):
     # See how long we take to mine a block
     mean_hashes = pow(2, 256) // target
     mean_time = mean_hashes / (hashrate * 1e15)
-    time = int(block_time(mean_time) + 0.5)
+    time = int(block_time(mean_time, **scenario.params) + 0.5)
     wall_time = states[-1].wall_time + time
     # Did the difficulty ramp hashrate get the block?
     if random.random() < (abs(scenario.dr_hashrate) / hashrate):
@@ -939,17 +945,20 @@ Algos = {
 Scenario = namedtuple('Scenario', 'next_fx, params, dr_hashrate, pump_144_threshold')
 
 Scenarios = {
-    'default' : Scenario(next_fx_random, {}, 0, 0),
-    'stable' : Scenario(next_fx_constant, {"price1x":True}, 0, 0),
-    'fxramp' : Scenario(next_fx_ramp, {}, 0, 0),
+    'default'      : Scenario(next_fx_random, {}, 0, 0),
+    'bobtail10'    : Scenario(next_fx_random,   {"bobtail":10},  0, 0),
+    'bobtail100'   : Scenario(next_fx_random,   {"bobtail":100}, 0, 0),
+    'deterministic': Scenario(next_fx_random,   {"deterministic":True}, 0, 0),
+    'stable'       : Scenario(next_fx_constant, {"price1x":True}, 0, 0),
+    'fxramp'       : Scenario(next_fx_ramp, {}, 0, 0),
     # Difficulty rampers with given PH/s
-    'dr50' : Scenario(next_fx_random, {}, 50, 0),
-    'dr75' : Scenario(next_fx_random, {}, 75, 0),
-    'dr100' : Scenario(next_fx_random, {}, 100, 0),
-    'pump-osc' : Scenario(next_fx_ramp, {}, 0, 8000),
-    'ft50' : Scenario(next_fx_random, {}, -50, 0),
-    'ft100' : Scenario(next_fx_random, {}, -100, 0),
-    'price10x' : Scenario(next_fx_random, {"price10x":True}, 0, 0),
+    'dr50'         : Scenario(next_fx_random, {}, 50, 0),
+    'dr75'         : Scenario(next_fx_random, {}, 75, 0),
+    'dr100'        : Scenario(next_fx_random, {}, 100, 0),
+    'pump-osc'     : Scenario(next_fx_ramp,   {}, 0, 8000),
+    'ft50'         : Scenario(next_fx_random, {}, -50, 0),
+    'ft100'        : Scenario(next_fx_random, {}, -100, 0),
+    'price10x'     : Scenario(next_fx_random, {"price10x":True}, 0, 0),
 }
 
 def run_one_simul(print_it, returnstate=False, params=default_params):
