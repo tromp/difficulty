@@ -398,8 +398,8 @@ def next_bits_aserti(msg, tau, mode=1, mo3=False):
     # Ultimately, we want to approximate the following ASERT formula, using only integer (fixed-point) math:
     #     new_target = old_target * 2^((blocks_time - IDEAL_BLOCK_TIME*(height_diff+1)) / tau)
 
-    # First, we'll calculate the exponent:
-    exponent = ((blocks_time - IDEAL_BLOCK_TIME*height_diff) * radix) // tau
+    # First, we'll calculate the exponent, using floor division:
+    exponent = int(((blocks_time - IDEAL_BLOCK_TIME*height_diff) * radix) / tau)
 
     # Next, we use the 2^x = 2 * 2^(x-1) identity to shift our exponent into the (0, 1] interval.
     # First, the truncated exponent tells us how many shifts we need to do
@@ -883,6 +883,10 @@ Algos = {
     }),
     'aserti3-576' : Algo(next_bits_aserti, {
         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 576),
+        'mode': 3,
+    }),
+    'aserti3-2d' : Algo(next_bits_aserti, {
+        'tau': 2*24*3600,
         'mode': 3,
     }),
     'aserti3-mo3-072' : Algo(next_bits_aserti, {
