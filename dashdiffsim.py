@@ -15,7 +15,7 @@ sys.setrecursionlimit(100000)
 
 MAX_BLOCKS = 500000
 
-params = {'algo':['grin-60-3', 'wtema-072'],
+params = {'algo':['grin-60-3', 'wtema-120'],
           'scenario':'default',
           'num_blocks':4000,
 
@@ -87,8 +87,8 @@ if __name__ == "__main__":
           df['chainworks']   = [state.chainwork for state in states]
           df['hashrates']    = [state.hashrate for state in states]
           df['rev_ratios']   = [1/state.rev_ratio for state in states]
-          df['bits']         = [state.bits for state in states]
-          df['difficulties'] = [mining.TARGET_1 / mining.bits_to_target(state.bits) for state in states]
+          df['bits']         = [state.bitz for state in states]
+          df['difficulties'] = [mining.TARGET_1 / mining.bitz_to_target(state.bitz) for state in states]
           df['greedy_fracs'] = [state.greedy_frac for state in states]
           df['var_fracs']    = [state.var_frac for state in states]
           #df['states'] = states
