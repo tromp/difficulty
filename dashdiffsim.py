@@ -13,7 +13,7 @@ import mining
 
 sys.setrecursionlimit(100000)
 
-MAX_BLOCKS = 50000
+MAX_BLOCKS = 500000
 
 params = {'algo':['grin-60-3', 'wtema-072'],
           'scenario':'default',
@@ -22,9 +22,9 @@ params = {'algo':['grin-60-3', 'wtema-072'],
           'INITIAL_BCC_BITS':0x18084bb7,
           'INITIAL_SWC_BITS':0x18013ce9,
           'INITIAL_FX':0.15,
-          'INITIAL_TIMESTAMP':1503430225,
+          'INITIAL_TIMESTAMP':1595564499,
           'INITIAL_HASHRATE':1000,    # In PH/s.
-          'INITIAL_HEIGHT':481824,
+          'INITIAL_HEIGHT':645264,
           'BTC_fees':0.02,
           'BCH_fees':0.002,
 
@@ -48,7 +48,7 @@ params = {'algo':['grin-60-3', 'wtema-072'],
           'GREEDY_PCT':3,
           'GREEDY_WINDOW':1,
           }
-
+OPACITY = 0.7
 debug=3
 
 seed = 100 #random.randint(0, 2**32-2) # you can also set this to a specific integer for repeatability
@@ -153,7 +153,7 @@ if __name__ == "__main__":
                            html.H6("Randomness seed")),
                  style={'display':'flex'}),
         html.Div(children=(dcc.Input(id='blocks', value=params['num_blocks'], type="number", 
-                               step=100, min=100, max=50000, required=True, persistence=True),
+                               step=100, min=100, max=MAX_BLOCKS, required=True, persistence=True),
                            html.H6("Number of blocks to simulate")), style={'display':'flex'}),
 
         # html.Div(children=(dcc.Input(id='', value=params[''], type="number", 
@@ -298,7 +298,7 @@ if __name__ == "__main__":
           name = df['name']
           datalist.append({'x': list(map(lambda x: (x-df['wall_times'][0])/3600/24, df['wall_times'])), 
                           'y': df['difficulties'], 
-                          'mode':'lines', 'name':name})
+                          'mode':'lines', 'name':name, 'opacity':OPACITY})
         return {'data': datalist,
                'layout': {'title': "Difficulty", 'xaxis': {'title':'Days since start'}, 'yaxis': {'title':"Difficulty"}}}
     @app.callback(Output(component_id='hashrate-graph', component_property='figure'),
@@ -314,7 +314,7 @@ if __name__ == "__main__":
           name = df['name']
           datalist.append({'x': list(map(lambda x: (x-df['wall_times'][0])/3600/24, df['wall_times'])), 
                           'y': df['hashrates'], 
-                          'mode':'lines', 'name':name,})# 'line':{'color':'blue'}}
+                          'mode':'lines', 'name':name, 'opacity':OPACITY})# 'line':{'color':'blue'}}
         return {'data': datalist,
                'layout': {'title': "BCH Hashrate", 'xaxis': {'title':'Days since start'}, 'yaxis': {'title':"Hashrate", "type":"log"}}}
 
@@ -329,7 +329,7 @@ if __name__ == "__main__":
           name = df['name']
           datalist.append({'x': list(map(lambda x: (x-df['heights'][0]), df['heights'])), 
                           'y': df['rev_ratios'], 
-                          'mode':'lines', 'name':name})
+                          'mode':'lines', 'name':name, 'opacity':OPACITY})
         datalist.append({'x': list(map(lambda x: (x-dfs[0]['heights'][0]), dfs[0]['heights'])), 
                           'y': normalize(dfs[0]['fxs']), 
                           'mode':'lines', 'name':'Exchange rate', 'line':{'color':'black'}})
@@ -373,7 +373,7 @@ if __name__ == "__main__":
           print(df['name'], below_60_sec, above_1800_sec)
           datalist.append({'x': intervalcenters, 
                           'y': bins, 
-                          'name':df['name']})
+                          'name':df['name'], 'opacity':OPACITY})
         datalist.append({'x': intervalcenters, 
                           'y': unitybins, 
                           'name':'Ideal', 'line':{'color':'black'}})
@@ -399,7 +399,7 @@ if __name__ == "__main__":
           smasize = int(max(24, min(2016, len(df['wall_times'])/50)))
           datalist.append({'x': list(map(lambda x: (x-df['wall_times'][0])/3600/24, df['wall_times'])), 
                           'y': conftimesSMA(smasize, df), 
-                          'mode':'lines', 'name':name})
+                          'mode':'lines', 'name':name, 'opacity':OPACITY})
         return {'data': datalist,
                'layout': {'title': "Avg confirmation time (%s block moving average)" % smasize, 
                           'xaxis': {'title':'Days since start'}, 

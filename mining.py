@@ -61,9 +61,9 @@ default_params = {
     'INITIAL_BCC_BITS':0x18084bb7,
     'INITIAL_SWC_BITS':0x18013ce9,
     'INITIAL_FX':0.19,
-    'INITIAL_TIMESTAMP':1503430225,
+    'INITIAL_TIMESTAMP':1595564499,
     'INITIAL_HASHRATE':1000,    # In PH/s.
-    'INITIAL_HEIGHT':481824,
+    'INITIAL_HEIGHT':645264,
     'BTC_fees':0.02,
     'BCH_fees':0.002,
     'num_blocks':10000,
@@ -432,6 +432,150 @@ def next_bits_grin(msg, n, dampen):
     damped_ts = (1 * delta_ts + (dampen - 1) * (n * IDEAL_BLOCK_TIME) ) // dampen
     work = (delta_work) * IDEAL_BLOCK_TIME // damped_ts
     return target_to_bits((2 << 255) // work - 1)
+
+def next_bits_grasberg(msg, nblocks, genesis_time=1231006505, correct_drift=True):
+    LN2_32 = 2977044472
+    POW2_32 = 1 << 32
+    def deterministicExp2(n):
+        """
+        Rescale the computation depending on n for better precision.
+        We use the MSB to form 16 buckets.
+        """
+        if n < 0: n += 1<<32
+        bucket = n >> 28;
+
+          # Rescale around the middle of the range via:
+          #     exp2(n) = 2^32 * 2^(n/2^32)
+          #             = 2^32 * 2^((n - d)/2^32 + d/2^32)
+          #             = 2^32 * 2^(d/2^32) * 2^((n - d)/2^32)
+          # Using x = n - d:
+          #     exp2(n) = 2^32 * 2^(d/2^32) * 2^(x/2^32)
+
+        d = (2 * bucket + 1) << 27;
+        x = n - d;
+
+        k0s = [
+            # 2^32 * (2^(1/32) - 1)  = 94047537.3451
+            94047537,
+            # 2^32 * (2^(3/32) - 1)  = 288365825.147
+            288365825,
+            # 2^32 * (2^(5/32) - 1)  = 491287318.545
+            491287319,
+            # 2^32 * (2^(7/32) - 1)  = 703192913.992
+            703192914,
+            # 2^32 * (2^(9/32) - 1)  = 924480371.666
+            924480372,
+            # 2^32 * (2^(11/32) - 1) = 1155565062.10
+            1155565062,
+            # 2^32 * (2^(13/32) - 1) = 1396880745.83
+            1396880746,
+            # 2^32 * (2^(15/32) - 1) = 1648880387.65
+            1648880388,
+            # 2^32 * (2^(17/32) - 1) = 1912037006.77
+            1912037007,
+            # 2^32 * (2^(19/32) - 1) = 2186844564.80
+            2186844565,
+            # 2^32 * (2^(21/32) - 1) = 2473818892.86
+            2473818893,
+            # 2^32 * (2^(23/32) - 1) = 2773498659.88
+            2773498660,
+            # 2^32 * (2^(25/32) - 1) = 3086446383.71
+            3086446384,
+            # 2^32 * (2^(27/32) - 1) = 3413249486.97
+            3413249487,
+            # 2^32 * (2^(29/32) - 1) = 3754521399.73
+            3754521400,
+            # 2^32 * (2^(31/32) - 1) = 4110902710.89
+            4110902711,
+        ]
+        k0 = k0s[bucket];
+
+        k1s = [
+            # 2^32 * ln(2) * 2^(1/32)  = 3042233257.17
+            3042233257,
+            # 2^32 * ln(2) * 2^(3/32)  = 3176924430.49
+            3176924430,
+            # 2^32 * ln(2) * 2^(5/32)  = 3317578891.51
+            3317578892,
+            # 2^32 * ln(2) * 2^(7/32)  = 3464460657.54
+            3464460658,
+            # 2^32 * ln(2) * 2^(9/32)  = 3617845434.92
+            3617845435,
+            # 2^32 * ln(2) * 2^(11/32) = 3778021136.56
+            3778021137,
+            # 2^32 * ln(2) * 2^(13/32) = 3945288422.37
+            3945288422,
+            # 2^32 * ln(2) * 2^(15/32) = 4119961263.60
+            4119961264,
+            # 2^32 * ln(2) * 2^(17/32) = 4302367532.19
+            4302367532,
+            # 2^32 * ln(2) * 2^(19/32) = 4492849616.23
+            4492849616,
+            # 2^32 * ln(2) * 2^(21/32) = 4691765062.62
+            4691765063,
+            # 2^32 * ln(2) * 2^(23/32) = 4899487248.21
+            4899487248,
+            # 2^32 * ln(2) * 2^(25/32) = 5116406080.64
+            5116406081,
+            # 2^32 * ln(2) * 2^(27/32) = 5342928730.26
+            5342928730,
+            # 2^32 * ln(2) * 2^(29/32) = 5579480394.39
+            5579480394,
+            # 2^32 * ln(2) * 2^(31/32) = 5826505095.43
+            5826505095,
+        ]
+        k1 = k1s[bucket];
+
+         # Now we aproximate the result using a taylor series.
+
+        u0 = k0;
+        u1_31 = (x * k1) >> 1;
+        u2_31 = (((x * LN2_32) >> 32) * ((x * k1) >> 32)) >> 2;
+
+        return u0 + ((u1_31 + u2_31) >> 31);
+
+    def computeTargetBlockTime(states, genesis_time):
+        lastBlockTime = states[-1].timestamp                        # apparently this one is the nTime, not the solvetime
+        expectedTime = states[-1].height * IDEAL_BLOCK_TIME + genesis_time
+        drift = expectedTime - lastBlockTime;
+        tau = 14 * 24 * 60 * 60 # this is different from the ASERT tau, but shares the same name
+        x32 = int((drift * POW2_32) / tau)
+        # 2^32 * ln2(675/600) = 729822323.967
+        X_CLIP = 729822324
+        # We clip to ensure block time stay around 10 minutes in practice.
+        x = max(min(x32, X_CLIP), -X_CLIP)
+        offsetTime32 = IDEAL_BLOCK_TIME * deterministicExp2(x)
+        return (IDEAL_BLOCK_TIME + (offsetTime32 >> 32)) >> (x32 < 0)
+
+    def ComputeNextWork(states, nblocks, genesis_time, correct_drift):
+        targetBlockTime = computeTargetBlockTime(states, genesis_time) if correct_drift else IDEAL_BLOCK_TIME
+        lastBlockTime = states[-1].timestamp - states[-2].timestamp # apparently this one is the solvetime, not the nTime
+        timeOffset = targetBlockTime - lastBlockTime
+        tau32 = nblocks * IDEAL_BLOCK_TIME * LN2_32
+        x32 = int((timeOffset * POW2_32) / (tau32 >> 32))
+        xi = x32 >> 32
+        xd = x32 & 0xffffffff
+        lastBlockWork = int(states[-1].chainwork - states[-2].chainwork)
+        if xi >= 32:
+            return lastBlockWork << 32
+        elif xi <= -32:
+            return lastBlockWork >> 32
+        offsetWork32 = lastBlockWork * deterministicExp2(xd)
+        nextWork = (lastBlockWork + (offsetWork32 >> 32)) >> (-xi) if xi < 0 \
+              else (lastBlockWork << xi) + (offsetWork32 >> (32 - xi))
+        return int(nextWork)
+
+    def ComputeTargetFromWork(work):
+        # We need to compute T = (2^256 / W) - 1 but 2^256 doesn't fit in 256 bits.
+        # By expressing 1 as W / W, we get (2^256 - W) / W, and we can compute
+        # 2^256 - W as the complement of W.
+        return (2**256-work)//work
+
+    nextWork = ComputeNextWork(states, nblocks, genesis_time, correct_drift)
+    nextTarget = ComputeTargetFromWork(nextWork)
+    powLimit = 1<<224
+    if nextTarget > powLimit: return target_to_bits(powLimit)
+    return target_to_bits(nextTarget)
 
 def next_bits_lwma(msg, n):
     block_intervals = [states[-(1+i)].timestamp - states[-(2+i)].timestamp for i in range(n)]
@@ -945,10 +1089,10 @@ Algos = {
     }),
     'wtema-288' : Algo(next_bits_wtema, {
         'alpha_recip': 288,
+    }),
+    'wtema-576' : Algo(next_bits_wtema, {
+        'alpha_recip': 576,
     })
-#     'wtema-576' : Algo(next_bits_wtema, {
-#         'alpha_recip': 576,
-#     }),
 #     'wtema-mo3-072' : Algo(next_bits_wtema, {
 #         'alpha_recip': 72, 'mo3':1,
 #     }),
@@ -963,6 +1107,46 @@ Algos = {
 #     }),
 #     'wtema-mo3bad-576' : Algo(next_bits_wtema, {
 #         'alpha_recip': 576, 'mo3':2,
+#     }),
+#     'grasberg-144' : Algo(next_bits_grasberg, {
+#         'nblocks': 144,
+#     }),
+#     'grasberg-288' : Algo(next_bits_grasberg, {
+#         'nblocks': 288,
+#     }),
+#     'grasberg-416' : Algo(next_bits_grasberg, {
+#         'nblocks': 416,
+#     }),
+#     'grasberg-576' : Algo(next_bits_grasberg, {
+#         'nblocks': 576,
+#     }),
+#     'grasberg-neutral-144' : Algo(next_bits_grasberg, {
+#         'nblocks': 144,
+#         'genesis_time': default_params['INITIAL_TIMESTAMP'] - IDEAL_BLOCK_TIME*default_params['INITIAL_HEIGHT']
+#     }),
+#     'grasberg-neutral-288' : Algo(next_bits_grasberg, {
+#         'nblocks': 288,
+#         'genesis_time': default_params['INITIAL_TIMESTAMP'] - IDEAL_BLOCK_TIME*default_params['INITIAL_HEIGHT']
+#     }),
+#     'grasberg-neutral-416' : Algo(next_bits_grasberg, {
+#         'nblocks': 416,
+#         'genesis_time': default_params['INITIAL_TIMESTAMP'] - IDEAL_BLOCK_TIME*default_params['INITIAL_HEIGHT']
+#     }),
+#     'grasberg-neutral-576' : Algo(next_bits_grasberg, {
+#         'nblocks': 576,
+#         'genesis_time': default_params['INITIAL_TIMESTAMP'] - IDEAL_BLOCK_TIME*default_params['INITIAL_HEIGHT']
+#     }),
+#     'grasberg-nodrift-144' : Algo(next_bits_grasberg, {
+#         'nblocks': 144, 'correct_drift': False,
+#     }),
+#     'grasberg-nodrift-288' : Algo(next_bits_grasberg, {
+#         'nblocks': 288, 'correct_drift': False,
+#     }),
+#     'grasberg-nodrift-416' : Algo(next_bits_grasberg, {
+#         'nblocks': 416, 'correct_drift': False,
+#     }),
+#     'grasberg-nodrift-576' : Algo(next_bits_grasberg, {
+#         'nblocks': 576, 'correct_drift': False,
 #     })
 }
 
