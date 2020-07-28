@@ -15,7 +15,7 @@ sys.setrecursionlimit(100000)
 
 MAX_BLOCKS = 50000
 
-params = {'algo':['wtema-144', 'cw-144'],
+params = {'algo':['grin-60-3', 'wtema-072'],
           'scenario':'default',
           'num_blocks':4000,
 

@@ -425,6 +425,14 @@ def next_bits_aserti(msg, tau, mode=1, mo3=False):
         target += (target * factor) >> rbits
     return target_to_bits(target)
 
+def next_bits_grin(msg, n, dampen):
+    delta_ts       = states[-1].timestamp - states[-1-n].timestamp
+    delta_work     = states[-1].chainwork - states[-1-n].chainwork
+
+    damped_ts = (1 * delta_ts + (dampen - 1) * (n * IDEAL_BLOCK_TIME) ) // dampen
+    work = (delta_work) * IDEAL_BLOCK_TIME // damped_ts
+    return target_to_bits((2 << 255) // work - 1)
+
 def next_bits_lwma(msg, n):
     block_intervals = [states[-(1+i)].timestamp - states[-(2+i)].timestamp for i in range(n)]
     block_works     = [states[-(1+i)].chainwork - states[-(2+i)].chainwork for i in range(n)]
@@ -680,243 +688,255 @@ def next_step(fx_jump_factor, params):
 Algo = namedtuple('Algo', 'next_bits params')
 
 Algos = {
-    'k-1' : Algo(next_bits_k, {
-        'mtp_window': 6,
-        'high_barrier': 60 * 128,
-        'target_raise_frac': 64,   # Reduce difficulty ~ 1.6%
-        'low_barrier': 60 * 30,
-        'target_drop_frac': 256,   # Raise difficulty ~ 0.4%
-        'fast_blocks_pct': 95,
-    }),
-    'k-2' : Algo(next_bits_k, {
-        'mtp_window': 4,
-        'high_barrier': 60 * 55,
-        'target_raise_frac': 100,   # Reduce difficulty ~ 1.0%
-        'low_barrier': 60 * 36,
-        'target_drop_frac': 256,   # Raise difficulty ~ 0.4%
-        'fast_blocks_pct': 95,
-    }),
-    'd-1' : Algo(next_bits_d, {}),
-    'cw-072' : Algo(next_bits_cw, {
-        'block_count': 72,
-    }),
-    'cw-108' : Algo(next_bits_cw, {
-        'block_count': 108,
-    }),
-    'cw-144' : Algo(next_bits_cw, {
-        'block_count': 144,
-    }),
-    'cw-288' : Algo(next_bits_cw, {
-        'block_count': 288,
-    }),
-    'cw-576' : Algo(next_bits_cw, {
-        'block_count': 576,
-    }),
-    'cw-sha-16' : Algo(next_bits_sha, {}),
-    'cw-180' : Algo(next_bits_cw, {
-        'block_count': 180,
-    }),
-    'wt-144' : Algo(next_bits_wt, {
-        'block_count': 144*2
-    }),
-    'wt-190' : Algo(next_bits_wt, {
-        'block_count': 190*2
-    }),
-    'wt-288' : Algo(next_bits_wt, {
-        'block_count': 288*2
-    }),
-    'wt-576' : Algo(next_bits_wt, {
-        'block_count': 576*2
-    }),
-    'dgw3-024' : Algo(next_bits_dgw3, { # 24-blocks, like Dash
-        'block_count': 24,
-    }),
-    'dgw3-144' : Algo(next_bits_dgw3, { # 1 full day
-        'block_count': 144,
-    }),
-    'meng-1' : Algo(next_bits_m2, { # mengerian_algo_1
-        'window_1': 71,
-        'window_2': 137,
-    }),
-    'meng-2' : Algo(next_bits_m4, { # mengerian_algo_2
-        'window_1': 13,
-        'window_2': 37,
-        'window_3': 71,
-        'window_4': 137,
-    }),
-    # runs wt-144 in external program, compares with python implementation.
-    'wt-144-compare' : Algo(next_bits_wt_compare, {
-        'block_count': 144
-    }),
-    'ema-30min' : Algo(next_bits_ema, { # Exponential moving avg
-        'window': 30 * 60,
-    }),
-    'ema-3h' : Algo(next_bits_ema, {
-        'window': 3 * 60 * 60,
-    }),
-    'ema-1d' : Algo(next_bits_ema, {
-        'window': 24 * 60 * 60,
-    }),
-    'ema2-1d' : Algo(next_bits_ema2, {
-        'window': 24 * 60 * 60,
-    }),
-    'emai-1d' : Algo(next_bits_ema_int_approx, {
-        'window': 24 * 60 * 60,
-    }),
-    'emai2-1d' : Algo(next_bits_ema_int_approx2, {
-        'window': 24 * 60 * 60,
-    }),
-    'simpexp-1d' : Algo(next_bits_simple_exponential, {
-        'window': 24 * 60 * 60,
-    }),
-    'simpexpi-1d' : Algo(next_bits_simple_exponential_int_approx, {
-        'window': 24 * 60 * 60,
-    }),
-    'lwma-072' : Algo(next_bits_lwma, {
-        'n': 72*2,
-    }),
-    'lwma-144' : Algo(next_bits_lwma, {
-        'n': 144*2,
-    }),
-    'lwma-190' : Algo(next_bits_lwma, {
-        'n': 190*2,
-    }),
-    'lwma-240' : Algo(next_bits_lwma, {
-        'n': 240*2,
-    }),
-    'lwma-288' : Algo(next_bits_lwma, {
-        'n': 288*2,
-    }),
-    'lwma-576' : Algo(next_bits_lwma, {
-        'n': 576*2,
-    }),
-    'asert-072' : Algo(next_bits_asert, {
-        'tau': (IDEAL_BLOCK_TIME * 72),
-    }),
-    'asert-144' : Algo(next_bits_asert, {
-        'tau': (IDEAL_BLOCK_TIME * 144),
-    }),
-    'asert-208' : Algo(next_bits_asert, {
-        'tau': (IDEAL_BLOCK_TIME * 208),
-    }),
-    'asert-288' : Algo(next_bits_asert, {
-        'tau': (IDEAL_BLOCK_TIME * 288),
-    }),
-    'asert-342' : Algo(next_bits_asert, {
-        'tau': (IDEAL_BLOCK_TIME * 342),
-    }),
-    'asert-407' : Algo(next_bits_asert, {
-        'tau': (IDEAL_BLOCK_TIME * 407),
-    }),
-    'asert-484' : Algo(next_bits_asert, {
-        'tau': (IDEAL_BLOCK_TIME * 484),
-    }),
-    'asert-576' : Algo(next_bits_asert, {
-        'tau': (IDEAL_BLOCK_TIME * 576),
-    }),
-    'asert-685' : Algo(next_bits_asert, {
-        'tau': (IDEAL_BLOCK_TIME * 685),
-    }),
-    'asert-815' : Algo(next_bits_asert, {
-        'tau': (IDEAL_BLOCK_TIME * 815),
-    }),
-    'asert-969' : Algo(next_bits_asert, {
-        'tau': (IDEAL_BLOCK_TIME * 969),
-    }),
-    'asert-1152' : Algo(next_bits_asert, {
-        'tau': (IDEAL_BLOCK_TIME * 1152),
-    }),
-    'asert-2304' : Algo(next_bits_asert, {
-        'tau': (IDEAL_BLOCK_TIME * 2304),
-    }),
-    'asertd-144' : Algo(next_bits_asert_discrete, {
-        'window': (IDEAL_BLOCK_TIME * 144),
-        'granularity': 100,
-    }),
-    'aserti1-144' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 144),
-        'mode': 1,
-    }),
-    'aserti1-288' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 288),
-        'mode': 1,
-    }),
-    'aserti1-576' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 576),
-        'mode': 1,
-    }),
-    'aserti2-144' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 144),
-        'mode': 2,
-    }),
-    'aserti2-288' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 288),
-        'mode': 2,
-    }),
-    'aserti2-576' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 576),
-        'mode': 2,
-    }),
-    'aserti3-072' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME *  72),
-        'mode': 3,
-    }),
-    'aserti3-144' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 144),
-        'mode': 3,
-    }),
-    'aserti3-200' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 200),
-        'mode': 3,
-    }),
-    'aserti3-208' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 208),
-        'mode': 3,
-    }),
-    'aserti3-288' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 288),
-        'mode': 3,
-    }),
-    'aserti3-416' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 416),
-        'mode': 3,
-    }),
-    'aserti3-576' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 576),
-        'mode': 3,
-    }),
-    'aserti3-2d' : Algo(next_bits_aserti, {
-        'tau': 2*24*3600,
-        'mode': 3,
-    }),
-    'aserti3-mo3-072' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME *  72),
-        'mode': 3, 'mo3':True,
-    }),
-    'aserti3-mo3-144' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 144),
-        'mode': 3, 'mo3':True,
-    }),
-    'aserti3-mo3-200' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 200),
-        'mode': 3, 'mo3':True,
-    }),
-    'aserti3-mo3-208' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 208),
-        'mode': 3, 'mo3':True,
-    }),
-    'aserti3-mo3-288' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 288),
-        'mode': 3, 'mo3':True,
-    }),
-    'aserti3-mo3-416' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 416),
-        'mode': 3, 'mo3':True,
-    }),
-    'aserti3-mo3-576' : Algo(next_bits_aserti, {
-        'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 576),
-        'mode': 3, 'mo3':True,
-    }),
+    'grin-60-3' : Algo(next_bits_grin, {
+        'n': 60,
+        'dampen': 3,
+    }),
+    'grin-60-5' : Algo(next_bits_grin, {
+        'n': 60,
+        'dampen': 5,
+    }),
+    'grin-60-7' : Algo(next_bits_grin, {
+        'n': 60,
+        'dampen': 7,
+    }),
+#     'k-1' : Algo(next_bits_k, {
+#         'mtp_window': 6,
+#         'high_barrier': 60 * 128,
+#         'target_raise_frac': 64,   # Reduce difficulty ~ 1.6%
+#         'low_barrier': 60 * 30,
+#         'target_drop_frac': 256,   # Raise difficulty ~ 0.4%
+#         'fast_blocks_pct': 95,
+#     }),
+#     'k-2' : Algo(next_bits_k, {
+#         'mtp_window': 4,
+#         'high_barrier': 60 * 55,
+#         'target_raise_frac': 100,   # Reduce difficulty ~ 1.0%
+#         'low_barrier': 60 * 36,
+#         'target_drop_frac': 256,   # Raise difficulty ~ 0.4%
+#         'fast_blocks_pct': 95,
+#     }),
+#     'd-1' : Algo(next_bits_d, {}),
+#     'cw-072' : Algo(next_bits_cw, {
+#         'block_count': 72,
+#     }),
+#     'cw-108' : Algo(next_bits_cw, {
+#         'block_count': 108,
+#     }),
+#     'cw-144' : Algo(next_bits_cw, {
+#         'block_count': 144,
+#     }),
+#     'cw-288' : Algo(next_bits_cw, {
+#         'block_count': 288,
+#     }),
+#     'cw-576' : Algo(next_bits_cw, {
+#         'block_count': 576,
+#     }),
+#     'cw-sha-16' : Algo(next_bits_sha, {}),
+#     'cw-180' : Algo(next_bits_cw, {
+#         'block_count': 180,
+#     }),
+#     'wt-144' : Algo(next_bits_wt, {
+#         'block_count': 144*2
+#     }),
+#     'wt-190' : Algo(next_bits_wt, {
+#         'block_count': 190*2
+#     }),
+#     'wt-288' : Algo(next_bits_wt, {
+#         'block_count': 288*2
+#     }),
+#     'wt-576' : Algo(next_bits_wt, {
+#         'block_count': 576*2
+#     }),
+#     'dgw3-024' : Algo(next_bits_dgw3, { # 24-blocks, like Dash
+#         'block_count': 24,
+#     }),
+#     'dgw3-144' : Algo(next_bits_dgw3, { # 1 full day
+#         'block_count': 144,
+#     }),
+#     'meng-1' : Algo(next_bits_m2, { # mengerian_algo_1
+#         'window_1': 71,
+#         'window_2': 137,
+#     }),
+#     'meng-2' : Algo(next_bits_m4, { # mengerian_algo_2
+#         'window_1': 13,
+#         'window_2': 37,
+#         'window_3': 71,
+#         'window_4': 137,
+#     }),
+#     # runs wt-144 in external program, compares with python implementation.
+#     'wt-144-compare' : Algo(next_bits_wt_compare, {
+#         'block_count': 144
+#     }),
+#     'ema-30min' : Algo(next_bits_ema, { # Exponential moving avg
+#         'window': 30 * 60,
+#     }),
+#     'ema-3h' : Algo(next_bits_ema, {
+#         'window': 3 * 60 * 60,
+#     }),
+#     'ema-1d' : Algo(next_bits_ema, {
+#         'window': 24 * 60 * 60,
+#     }),
+#     'ema2-1d' : Algo(next_bits_ema2, {
+#         'window': 24 * 60 * 60,
+#     }),
+#     'emai-1d' : Algo(next_bits_ema_int_approx, {
+#         'window': 24 * 60 * 60,
+#     }),
+#     'emai2-1d' : Algo(next_bits_ema_int_approx2, {
+#         'window': 24 * 60 * 60,
+#     }),
+#     'simpexp-1d' : Algo(next_bits_simple_exponential, {
+#         'window': 24 * 60 * 60,
+#     }),
+#     'simpexpi-1d' : Algo(next_bits_simple_exponential_int_approx, {
+#         'window': 24 * 60 * 60,
+#     }),
+#     'lwma-072' : Algo(next_bits_lwma, {
+#         'n': 72*2,
+#     }),
+#     'lwma-144' : Algo(next_bits_lwma, {
+#         'n': 144*2,
+#     }),
+#     'lwma-190' : Algo(next_bits_lwma, {
+#         'n': 190*2,
+#     }),
+#     'lwma-240' : Algo(next_bits_lwma, {
+#         'n': 240*2,
+#     }),
+#     'lwma-288' : Algo(next_bits_lwma, {
+#         'n': 288*2,
+#     }),
+#     'lwma-576' : Algo(next_bits_lwma, {
+#         'n': 576*2,
+#     }),
+#     'asert-072' : Algo(next_bits_asert, {
+#         'tau': (IDEAL_BLOCK_TIME * 72),
+#     }),
+#     'asert-144' : Algo(next_bits_asert, {
+#         'tau': (IDEAL_BLOCK_TIME * 144),
+#     }),
+#     'asert-208' : Algo(next_bits_asert, {
+#         'tau': (IDEAL_BLOCK_TIME * 208),
+#     }),
+#     'asert-288' : Algo(next_bits_asert, {
+#         'tau': (IDEAL_BLOCK_TIME * 288),
+#     }),
+#     'asert-342' : Algo(next_bits_asert, {
+#         'tau': (IDEAL_BLOCK_TIME * 342),
+#     }),
+#     'asert-407' : Algo(next_bits_asert, {
+#         'tau': (IDEAL_BLOCK_TIME * 407),
+#     }),
+#     'asert-484' : Algo(next_bits_asert, {
+#         'tau': (IDEAL_BLOCK_TIME * 484),
+#     }),
+#     'asert-576' : Algo(next_bits_asert, {
+#         'tau': (IDEAL_BLOCK_TIME * 576),
+#     }),
+#     'asert-685' : Algo(next_bits_asert, {
+#         'tau': (IDEAL_BLOCK_TIME * 685),
+#     }),
+#     'asert-815' : Algo(next_bits_asert, {
+#         'tau': (IDEAL_BLOCK_TIME * 815),
+#     }),
+#     'asert-969' : Algo(next_bits_asert, {
+#         'tau': (IDEAL_BLOCK_TIME * 969),
+#     }),
+#     'asert-1152' : Algo(next_bits_asert, {
+#         'tau': (IDEAL_BLOCK_TIME * 1152),
+#     }),
+#     'asert-2304' : Algo(next_bits_asert, {
+#         'tau': (IDEAL_BLOCK_TIME * 2304),
+#     }),
+#     'asertd-144' : Algo(next_bits_asert_discrete, {
+#         'window': (IDEAL_BLOCK_TIME * 144),
+#         'granularity': 100,
+#     }),
+#     'aserti1-144' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 144),
+#         'mode': 1,
+#     }),
+#     'aserti1-288' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 288),
+#         'mode': 1,
+#     }),
+#     'aserti1-576' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 576),
+#         'mode': 1,
+#     }),
+#     'aserti2-144' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 144),
+#         'mode': 2,
+#     }),
+#     'aserti2-288' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 288),
+#         'mode': 2,
+#     }),
+#     'aserti2-576' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 576),
+#         'mode': 2,
+#     }),
+#     'aserti3-072' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME *  72),
+#         'mode': 3,
+#     }),
+#     'aserti3-144' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 144),
+#         'mode': 3,
+#     }),
+#     'aserti3-200' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 200),
+#         'mode': 3,
+#     }),
+#     'aserti3-208' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 208),
+#         'mode': 3,
+#     }),
+#     'aserti3-288' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 288),
+#         'mode': 3,
+#     }),
+#     'aserti3-416' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 416),
+#         'mode': 3,
+#     }),
+#     'aserti3-576' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 576),
+#         'mode': 3,
+#     }),
+#     'aserti3-2d' : Algo(next_bits_aserti, {
+#         'tau': 2*24*3600,
+#         'mode': 3,
+#     }),
+#     'aserti3-mo3-072' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME *  72),
+#         'mode': 3, 'mo3':True,
+#     }),
+#     'aserti3-mo3-144' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 144),
+#         'mode': 3, 'mo3':True,
+#     }),
+#     'aserti3-mo3-200' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 200),
+#         'mode': 3, 'mo3':True,
+#     }),
+#     'aserti3-mo3-208' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 208),
+#         'mode': 3, 'mo3':True,
+#     }),
+#     'aserti3-mo3-288' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 288),
+#         'mode': 3, 'mo3':True,
+#     }),
+#     'aserti3-mo3-416' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 416),
+#         'mode': 3, 'mo3':True,
+#     }),
+#     'aserti3-mo3-576' : Algo(next_bits_aserti, {
+#         'tau': int(math.log(2) * IDEAL_BLOCK_TIME * 576),
+#         'mode': 3, 'mo3':True,
+#     }),
     'wtema-072' : Algo(next_bits_wtema, {
         'alpha_recip': 72, # floor(1/(1 - pow(.5, 1.0/72))), # half-life = 72
     }),
@@ -925,25 +945,25 @@ Algos = {
     }),
     'wtema-288' : Algo(next_bits_wtema, {
         'alpha_recip': 288,
-    }),
-    'wtema-576' : Algo(next_bits_wtema, {
-        'alpha_recip': 576,
-    }),
-    'wtema-mo3-072' : Algo(next_bits_wtema, {
-        'alpha_recip': 72, 'mo3':1,
-    }),
-    'wtema-mo3-144' : Algo(next_bits_wtema, {
-        'alpha_recip': 144, 'mo3':1,
-    }),
-    'wtema-mo3-288' : Algo(next_bits_wtema, {
-        'alpha_recip': 288, 'mo3':1,
-    }),
-    'wtema-mo3-576' : Algo(next_bits_wtema, {
-        'alpha_recip': 576, 'mo3':1,
-    }),
-    'wtema-mo3bad-576' : Algo(next_bits_wtema, {
-        'alpha_recip': 576, 'mo3':2,
     })
+#     'wtema-576' : Algo(next_bits_wtema, {
+#         'alpha_recip': 576,
+#     }),
+#     'wtema-mo3-072' : Algo(next_bits_wtema, {
+#         'alpha_recip': 72, 'mo3':1,
+#     }),
+#     'wtema-mo3-144' : Algo(next_bits_wtema, {
+#         'alpha_recip': 144, 'mo3':1,
+#     }),
+#     'wtema-mo3-288' : Algo(next_bits_wtema, {
+#         'alpha_recip': 288, 'mo3':1,
+#     }),
+#     'wtema-mo3-576' : Algo(next_bits_wtema, {
+#         'alpha_recip': 576, 'mo3':1,
+#     }),
+#     'wtema-mo3bad-576' : Algo(next_bits_wtema, {
+#         'alpha_recip': 576, 'mo3':2,
+#     })
 }
 
 Scenario = namedtuple('Scenario', 'next_fx, params, dr_hashrate, pump_144_threshold')
