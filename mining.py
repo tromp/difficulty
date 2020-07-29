@@ -346,10 +346,6 @@ def next_step(fx_jump_factor, params):
 Algo = namedtuple('Algo', 'next_bitz params')
 
 Algos = {
-    'grin-180-1' : Algo(next_bitz_grin, {
-        'n': 180,
-        'dampen': 1,
-    }),
     'grin-60-3' : Algo(next_bitz_grin, {
         'n': 60,
         'dampen': 3,
@@ -370,21 +366,25 @@ Algos = {
         'n': 60,
         'dampen': 7,
     }),
-    'wtema-060' : Algo(next_bitz_wtema, {
-        'alpha_recip': 60, # floor(1/(1 - pow(.5, 1.0/60))), # half-life = 60
+    'wtema-090' : Algo(next_bitz_wtema, {
+        'alpha_recip': 90,  # floor(1/(1 - pow(.5, 1.0/90))), # half-life = 90
     }),
     'wtema-120' : Algo(next_bitz_wtema, {
         'alpha_recip': 120, 
     }),
+    'wtema-150' : Algo(next_bitz_wtema, {
+        'alpha_recip': 150,
+    }),
     'wtema-180' : Algo(next_bitz_wtema, {
         'alpha_recip': 180,
     }),
-    'wtema-240' : Algo(next_bitz_wtema, {
-        'alpha_recip': 240,
+    'wtema-210' : Algo(next_bitz_wtema, {
+        'alpha_recip': 210,
     }),
-    'wtema-300' : Algo(next_bitz_wtema, {
-        'alpha_recip': 300,
-    })
+    'grin-180-1' : Algo(next_bitz_grin, {
+        'n': 180,
+        'dampen': 1,
+    }),
 }
 
 Scenario = namedtuple('Scenario', 'next_fx, params, dr_hashrate, pump_144_threshold')
