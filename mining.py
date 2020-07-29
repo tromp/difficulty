@@ -217,10 +217,11 @@ def next_bitz_wtema(msg, alpha_recip):
     block_time = states[-1].timestamp - states[-2].timestamp
     next_target = prior_target // (IDEAL_BLOCK_TIME * alpha_recip)
     next_target *= block_time + IDEAL_BLOCK_TIME * (alpha_recip - 1)
-    # Constrain individual target changes to 12.5%
-    max_change = prior_target >> 3
-    next_target = max(min(next_target, prior_target + max_change),
-                                       prior_target - max_change)
+    # Constrain individual target changes to 50%
+    max_change = prior_target >> 1
+    assert next_target >= prior_target - max_change
+    assert next_target <= prior_target + max_change
+    # next_target = max(min(next_target, prior_target + max_change), prior_target - max_change)
     return target_to_bitz(next_target)
 
 def next_bitz_grin(msg, n, dampen):
