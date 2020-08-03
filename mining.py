@@ -214,7 +214,7 @@ def next_bitz_wtema(msg, alpha_recip):
     #    return next_bits_cw(msg, 2000)
 
     prior_target = bitz_to_target(states[-1].bitz)
-    block_time = states[-1].timestamp - states[-2].timestamp
+    block_time = max(0, states[-1].timestamp - states[-2].timestamp) # avoid negative solvetimes
     next_target = prior_target // (IDEAL_BLOCK_TIME * alpha_recip)
     next_target *= block_time + IDEAL_BLOCK_TIME * (alpha_recip - 1)
     # Constrain individual target changes to 50%
@@ -225,11 +225,11 @@ def next_bitz_wtema(msg, alpha_recip):
     return target_to_bitz(next_target)
 
 def next_bitz_grin(msg, n, dampen):
-    delta_ts       = states[-1].timestamp - states[-1-n].timestamp
+    delta_ts       = max(0, states[-1].timestamp - states[-1-n].timestamp) # avoid negative solvetimes
     delta_work     = states[-1].chainwork - states[-1-n].chainwork
 
     damped_ts = (1 * delta_ts + (dampen - 1) * (n * IDEAL_BLOCK_TIME) ) // dampen
-    work = (delta_work) * IDEAL_BLOCK_TIME // damped_ts
+    work = delta_work * IDEAL_BLOCK_TIME // damped_ts
     return target_to_bitz((2 << 255) // work - 1)
 
 def block_time(mean_time, **params):
@@ -351,40 +351,22 @@ Algos = {
         'n': 60,
         'dampen': 3,
     }),
-    'grin-60-4' : Algo(next_bitz_grin, {
-        'n': 60,
-        'dampen': 4,
-    }),
     'grin-60-5' : Algo(next_bitz_grin, {
         'n': 60,
         'dampen': 5,
-    }),
-    'grin-60-6' : Algo(next_bitz_grin, {
-        'n': 60,
-        'dampen': 6,
     }),
     'grin-60-7' : Algo(next_bitz_grin, {
         'n': 60,
         'dampen': 7,
     }),
-    'wtema-090' : Algo(next_bitz_wtema, {
-        'alpha_recip': 90,  # floor(1/(1 - pow(.5, 1.0/90))), # half-life = 90
-    }),
     'wtema-120' : Algo(next_bitz_wtema, {
         'alpha_recip': 120, 
-    }),
-    'wtema-150' : Algo(next_bitz_wtema, {
-        'alpha_recip': 150,
     }),
     'wtema-180' : Algo(next_bitz_wtema, {
         'alpha_recip': 180,
     }),
-    'wtema-210' : Algo(next_bitz_wtema, {
-        'alpha_recip': 210,
-    }),
-    'grin-180-1' : Algo(next_bitz_grin, {
-        'n': 180,
-        'dampen': 1,
+    'wtema-240' : Algo(next_bitz_wtema, {
+        'alpha_recip': 240,
     }),
 }
 
